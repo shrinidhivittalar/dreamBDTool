@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+@import "tailwindcss";
+
+:root { font-family: 'DM Sans', sans-serif; color: #2d2927; background: #f6f0e8; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+.serif { font-family: 'Playfair Display', Georgia, serif; }
+.input { width: 100%; border: 1px solid #d9cfc6; background: #fffdfa; border-radius: 8px; padding: 11px 13px; color: #2d2927; outline: none; transition: border .2s, box-shadow .2s; }
+.input:focus { border-color: #bd285c; box-shadow: 0 0 0 3px #bd285c18; }
+.pill { border: 1px solid #dacfc6; color: #514844; background: #fffdfa; border-radius: 999px; padding: 7px 12px; font-size: 12px; cursor: pointer; transition: all .18s; }
+.pill:hover, .pill.active { border-color: #bd285c; background: #fff0f4; color: #a51f50; }
+.card { background: #fffdfa; border: 1px solid #e4dcd4; border-radius: 12px; }
+/* UI polish */
+::selection { background: #f2bfd0; color: #5d1630; }
+button { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outline-offset: 2px; }
+input[type='range'] { height: 4px; cursor: pointer; }
+.card { box-shadow: 0 1px 2px #49312608, 0 10px 28px #49312608; }
+@media (max-width: 640px) {
+  .serif { letter-spacing: -0.015em; }
+  .card { border-radius: 10px; }
+}
