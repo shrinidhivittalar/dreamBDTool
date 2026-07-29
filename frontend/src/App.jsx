@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Field } from './components/Field'
 import { MultiSelect } from './components/MultiSelect'
 import { RecommendationCard } from './components/RecommendationCard'
@@ -6,16 +6,23 @@ import { fetchRecommendations } from './lib/api'
 
 const categories = ['Sweet', 'Savoury', 'Healthy', 'Cookies', 'Cakes']
 const vendors = ['Dream a Dozen', 'HealthyChef']
+const sweetOptions = [
+  { value: 'any', label: 'No preference' },
+  { value: 'sweet_only', label: 'Sweet only' },
+  { value: 'no_sweet', label: 'No sweet' },
+]
 
 const initialForm = {
-  budget: 1000,
+  budget_min: 800,
+  budget_max: 1000,
   item_count: 4,
   preferred_categories: [],
   mandatory_products: '',
   preferred_products: '',
   excluded_products: '',
   preferred_vendors: [],
-  buffer_percentage: 10,
+  sweet_preference: 'any',
+  price_includes_gst: false,
   allow_repeats: false,
   required_categories: '',
 }
@@ -26,10 +33,10 @@ export function App() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [catalogSize, setCatalogSize] = useState(0)
+  const [lastBrief, setLastBrief] = useState(null)
 
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const toggle = key => item => set(key, form[key].includes(item) ? form[key].filter(value => value !== item) : [...form[key], item])
-  const budgetLimit = useMemo(() => form.budget * (1 - form.buffer_percentage / 100), [form.budget, form.buffer_percentage])
 
   async function generate() {
     setLoading(true)
@@ -46,6 +53,12 @@ export function App() {
       setRecommendations(data.recommendations)
       setCatalogSize(data.catalog_size)
       setMessage(data.message || '')
+      setLastBrief({
+        mandatoryProducts: payload.mandatory_products,
+        requiredCategories: payload.required_categories,
+        budgetMin: payload.budget_min,
+        budgetMax: payload.budget_max,
+      })
     } catch (error) {
       setMessage('Backend is not connected yet. Start FastAPI to generate live recommendations.')
       setRecommendations([])
@@ -97,23 +110,36 @@ export function App() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Budget">
-                <div className="relative">
-                  <span className="absolute left-3 top-[11px] text-[#958980]">₹</span>
-                  <input className="input pl-7" type="number" value={form.budget} onChange={e => set('budget', Number(e.target.value))} />
+              <Field label="Budget min">
+                <div className="input flex items-center gap-1">
+                  <span className="text-[#958980]">₹</span>
+                  <input className="flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form.budget_min} onChange={e => set('budget_min', Number(e.target.value))} />
                 </div>
               </Field>
-              <Field label="Items">
-                <input className="input" type="number" min="1" max="20" value={form.item_count} onChange={e => set('item_count', Number(e.target.value))} />
+              <Field label="Budget max">
+                <div className="input flex items-center gap-1">
+                  <span className="text-[#958980]">₹</span>
+                  <input className="flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form.budget_max} onChange={e => set('budget_max', Number(e.target.value))} />
+                </div>
               </Field>
             </div>
 
-            <Field label="Buffer" hint={`${Math.round(budgetLimit).toLocaleString('en-IN')} target`}>
-              <input type="range" min="0" max="30" value={form.buffer_percentage} onChange={e => set('buffer_percentage', Number(e.target.value))} className="w-full accent-[#bd285c]" />
-              <div className="mt-1 flex justify-between text-xs text-[#958980]">
-                <span>0%</span>
-                <span className="font-semibold text-[#bd285c]">{form.buffer_percentage}% buffer</span>
-                <span>30%</span>
+            <Field label="Items">
+              <input className="input" type="number" min="1" max="20" value={form.item_count} onChange={e => set('item_count', Number(e.target.value))} />
+            </Field>
+
+            <Field label="Sweet preference">
+              <div className="flex flex-wrap gap-2">
+                {sweetOptions.map(option => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    className={`pill ${form.sweet_preference === option.value ? 'active' : ''}`}
+                    onClick={() => set('sweet_preference', option.value)}
+                  >
+                    {form.sweet_preference === option.value ? '✓ ' : ''}{option.label}
+                  </button>
+                ))}
               </div>
             </Field>
 
@@ -148,6 +174,13 @@ export function App() {
               </label>
             </Field>
 
+            <Field label="GST" hint="unconfirmed — flip if this is wrong">
+              <label className="flex items-center gap-2 text-sm text-[#4b423d]">
+                <input type="checkbox" className="h-4 w-4 accent-[#bd285c]" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} />
+                Selling prices already include GST
+              </label>
+            </Field>
+
             <button
               onClick={generate}
               disabled={loading}
@@ -177,14 +210,22 @@ export function App() {
                 <div className="max-w-sm">
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#f3dce3] text-2xl text-[#bd285c]">🎁</div>
                   <h3 className="serif text-2xl">Ready when you are</h3>
-                  <p className="mt-2 text-sm leading-6 text-[#83776f]">Fill in the brief on the left and we'll arrange the products into five sensible boxes.</p>
-                  <p className="mt-5 text-xs text-[#a39891]">Boxes near your buffer rank first, but nothing is ruled out.</p>
+                  <p className="mt-2 text-sm leading-6 text-[#83776f]">Fill in the brief on the left and we'll search every valid combination in the catalog for five sensible boxes.</p>
+                  <p className="mt-5 text-xs text-[#a39891]">Boxes inside your range rank first — nothing is ruled out for falling outside it.</p>
                 </div>
               </div>
             ) : (
               <div className="grid gap-4 xl:grid-cols-2">
                 {recommendations.map((recommendation, index) => (
-                  <RecommendationCard key={index} recommendation={recommendation} index={index} />
+                  <RecommendationCard
+                    key={index}
+                    recommendation={recommendation}
+                    index={index}
+                    mandatoryProducts={lastBrief?.mandatoryProducts ?? []}
+                    requiredCategories={lastBrief?.requiredCategories ?? []}
+                    budgetMin={lastBrief?.budgetMin ?? 0}
+                    budgetMax={lastBrief?.budgetMax ?? 0}
+                  />
                 ))}
               </div>
             )}

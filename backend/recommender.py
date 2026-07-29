@@ -8,16 +8,26 @@ except ImportError:
     from models import Product, Recommendation, RecommendationRequest
 
 
-# Scoring weights and DP resolution cap — assumptions pending BD sign-off,
-# see BUSINESS_RULE_ASSUMPTIONS.md.
+# Scoring weights, GST rate, and DP resolution cap — assumptions pending
+# BD/finance sign-off, see BUSINESS_RULE_ASSUMPTIONS.md.
 IN_HOUSE_WEIGHT = 3
 HEALTHY_WEIGHT = 2
 PREFERRED_WEIGHT = 5
+# DaD Selling Price is GST-exclusive; this is added on top before comparing
+# a combination's total against the client's budget range.
+GST_RATE = 0.05
 # Caps dp_history's (items, layers, price-buckets, quota-progress) cell
 # count; float32 so this stays ~200MB at the cap. Exceeding it coarsens the
 # price bucket width, not correctness — see _search_pool.
 CELL_BUDGET = 50_000_000
-OVERLAP_THRESHOLD = 0.5
+# Tried strictest-first: only fall back to a looser overlap allowance once
+# the stricter one can't fill every slot, so repeats across options stay as
+# rare as the catalog allows rather than jumping straight to "anything goes".
+OVERLAP_LEVELS = (0.25, 0.4, 0.55, 0.7)
+# A candidate only competes on diversity if its score is within this
+# fraction of the best score — keeps a hunt for variety from dragging in a
+# dramatically worse fit just because it doesn't overlap with the rest.
+QUALITY_FLOOR_RATIO = 0.85
 # Number of *distinct* requested categories, not total slots — bounds the
 # quota-progress dimension's multiplier the same way item_count<=20 bounds
 # the price/count dimensions.
@@ -52,17 +62,20 @@ def _bonus_value(product: Product, preferred: list[str]) -> float:
     )
 
 
-def _closeness(total: float, budget: float, target: float) -> float:
-    """Reward staying under the buffered target; penalize drifting past it.
+def _closeness(total: float, budget_min: float, budget_max: float) -> float:
+    """Reward staying within [budget_min, budget_max]; penalize drifting
+    outside on either side.
 
-    No branch discards a total — going over the buffer, or even the raw
-    budget, only lowers the score. There is deliberately no hard cutoff.
+    No branch discards a total — falling outside the range only lowers the
+    score. There is deliberately no hard cutoff.
     """
-    if total <= target:
-        return 100 * total / target
-    if total <= budget:
-        return 100 - 15 * (total - target) / (budget - target)
-    return 85 - 40 * (total - budget) / budget
+    if budget_min <= total <= budget_max:
+        midpoint = (budget_min + budget_max) / 2
+        span = (budget_max - budget_min) or 1
+        return 100 - 10 * abs(total - midpoint) / span
+    if total < budget_min:
+        return 95 - 40 * (budget_min - total) / budget_min
+    return 95 - 40 * (total - budget_max) / budget_max
 
 
 def _resolve_mandatory(candidates: list[Product], requested: list[str]) -> set[int]:
@@ -238,22 +251,70 @@ def _search_pool(
     return results
 
 
-def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k: int, limit: int) -> list[tuple[float, float, list[Product]]]:
+def _pick_within_threshold(
+    candidates: list[tuple[float, float, list[Product], Counter]],
+    k: int,
+    limit: int,
+    threshold: float | None = None,
+) -> tuple[list[tuple[float, float, list[Product]]], list[Counter]]:
+    """Greedily take candidates (already score-sorted) up to `limit`,
+    skipping any whose overlap with an already-picked combo exceeds
+    `threshold`. `threshold=None` means no overlap constraint at all —
+    just take the next-best distinct combos.
+    """
     picked: list[tuple[float, float, list[Product]]] = []
     picked_ids: list[Counter] = []
-    for score, total, combo, ids in scored:
-        if k and all(sum((ids & other).values()) / k <= OVERLAP_THRESHOLD for other in picked_ids):
+    for score, total, combo, ids in candidates:
+        if ids in picked_ids:
+            continue
+        if threshold is None or not k or all(sum((ids & other).values()) / k <= threshold for other in picked_ids):
             picked.append((score, total, combo))
             picked_ids.append(ids)
             if len(picked) == limit:
-                return picked
-    for score, total, combo, ids in scored:
-        if ids in picked_ids:
-            continue
-        picked.append((score, total, combo))
-        picked_ids.append(ids)
+                break
+    return picked, picked_ids
+
+
+def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k: int, limit: int) -> list[tuple[float, float, list[Product]]]:
+    """Pick up to `limit` results preferring low overlap with each other,
+    without sacrificing quality *or* diversity wholesale to get there.
+
+    Two guardrails, tried in order:
+    1. Quality floor — only candidates within QUALITY_FLOOR_RATIO of the
+       best score are eligible at all. Otherwise, hunting for a distinct
+       option could drag in something dramatically worse just because it
+       doesn't overlap with the good ones already picked.
+    2. Graduated overlap — within that eligible set, try the strictest
+       overlap allowance first (OVERLAP_LEVELS) and only loosen it if that
+       can't fill every slot, so repeats across options stay as rare as
+       the catalog allows rather than jumping straight to "ignore overlap
+       entirely" the moment the strict threshold falls short.
+
+    Only if the eligible set itself is smaller than `limit` do we reach
+    past the quality floor into the full candidate list, to guarantee up
+    to `limit` results whenever that many valid combinations exist at all.
+    `scored` is already sorted descending; re-sorting the final picks
+    restores that order since callers (and the UI) expect index 0 to be
+    the best.
+    """
+    if not scored:
+        return []
+    best_score = scored[0][0]
+    quality_floor = best_score * QUALITY_FLOOR_RATIO if best_score > 0 else best_score
+    eligible = [entry for entry in scored if entry[0] >= quality_floor]
+
+    picked: list[tuple[float, float, list[Product]]] = []
+    picked_ids: list[Counter] = []
+    for threshold in OVERLAP_LEVELS:
+        picked, picked_ids = _pick_within_threshold(eligible, k, limit, threshold)
         if len(picked) == limit:
             break
+    if len(picked) < limit:
+        picked, picked_ids = _pick_within_threshold(eligible, k, limit)
+    if len(picked) < limit:
+        picked, picked_ids = _pick_within_threshold(scored, k, limit)
+
+    picked.sort(key=lambda entry: entry[0], reverse=True)
     return picked
 
 
@@ -268,6 +329,10 @@ def recommend(
         candidates = [product for product in candidates if any(_category_match(product, category) for category in request.preferred_categories)]
     if request.preferred_vendors:
         candidates = [product for product in candidates if any(_matches(product.vendor, vendor) for vendor in request.preferred_vendors)]
+    if request.sweet_preference == "sweet_only":
+        candidates = [product for product in candidates if _category_match(product, "sweet")]
+    elif request.sweet_preference == "no_sweet":
+        candidates = [product for product in candidates if not _category_match(product, "sweet")]
 
     mandatory_indices = _resolve_mandatory(candidates, request.mandatory_products)
     mandatory_items = [candidates[i] for i in sorted(mandatory_indices)]
@@ -290,40 +355,44 @@ def recommend(
         if not any(_category_match(product, group) for product in pool):
             raise ValueError(f"Required category '{group}' has no matching catalog items.")
 
-    target = request.budget * (1 - request.buffer_percentage / 100)
     mandatory_total = sum(product.selling_price for product in mandatory_items)
     fixed_bonus = sum(_bonus_value(product, request.preferred_products) for product in mandatory_items)
+    # If the catalog price already includes GST, nothing is added on top;
+    # otherwise GST_RATE is added before comparing against the budget range.
+    gst_multiplier = 1.0 if request.price_includes_gst else 1 + GST_RATE
 
     if k == 0:
-        total = mandatory_total
-        score = _closeness(total, request.budget, target) + fixed_bonus
+        total = mandatory_total * gst_multiplier
+        score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus
         return [Recommendation(
             products=mandatory_items,
             total_price=round(total, 2),
-            remaining_budget=round(request.budget - total, 2),
+            remaining_budget=round(request.budget_max - total, 2),
             score=round(score, 3),
         )][:limit]
 
     scored: list[tuple[float, float, list[Product], Counter]] = []
     for bonus_sum, item_indices in _search_pool(pool, k, request.preferred_products, request.allow_repeats, group_keys, quota_counts):
         pool_items = [pool[i] for i in item_indices]
-        total = mandatory_total + sum(product.selling_price for product in pool_items)
-        score = _closeness(total, request.budget, target) + fixed_bonus + bonus_sum
+        raw_total = mandatory_total + sum(product.selling_price for product in pool_items)
+        total = raw_total * gst_multiplier
+        score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus + bonus_sum
         scored.append((score, total, mandatory_items + pool_items, Counter(item_indices)))
     scored.sort(key=lambda entry: entry[0], reverse=True)
 
     if messages is not None and scored:
         max_achievable = max(total for _, total, _, _ in scored)
-        if max_achievable < target * 0.95:
+        if max_achievable < request.budget_min * 0.95:
+            gst_note = "" if request.price_includes_gst else " (incl. GST)"
             messages.append(
                 f"The priciest valid {request.item_count}-item combination for this brief comes to "
-                f"₹{round(max_achievable)} — try raising the item count or enabling repeated products "
-                f"to get closer to ₹{round(request.budget)}."
+                f"₹{round(max_achievable)}{gst_note} — try raising the item count or enabling repeated "
+                f"products to get closer to your ₹{round(request.budget_min)}–₹{round(request.budget_max)} range."
             )
 
     return [Recommendation(
         products=combo,
         total_price=round(total, 2),
-        remaining_budget=round(request.budget - total, 2),
+        remaining_budget=round(request.budget_max - total, 2),
         score=round(score, 3),
     ) for score, total, combo in _select_diverse(scored, k, limit)]

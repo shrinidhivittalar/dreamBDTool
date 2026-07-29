@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class Product(BaseModel):
@@ -12,7 +14,8 @@ class Product(BaseModel):
 
 
 class RecommendationRequest(BaseModel):
-    budget: float = Field(gt=0)
+    budget_min: float = Field(gt=0)
+    budget_max: float = Field(gt=0)
     item_count: int = Field(gt=0, le=20)
     preferred_categories: list[str] = Field(default_factory=list)
     mandatory_products: list[str] = Field(default_factory=list)
@@ -20,9 +23,16 @@ class RecommendationRequest(BaseModel):
     excluded_products: list[str] = Field(default_factory=list)
     preferred_vendors: list[str] = Field(default_factory=list)
     occasion: str = ""
-    buffer_percentage: float = Field(default=10, ge=0, lt=100)
+    sweet_preference: Literal["any", "sweet_only", "no_sweet"] = "any"
     allow_repeats: bool = False
     required_categories: list[str] = Field(default_factory=list)
+    price_includes_gst: bool = False
+
+    @model_validator(mode="after")
+    def _validate_budget_range(self) -> "RecommendationRequest":
+        if self.budget_max < self.budget_min:
+            raise ValueError("budget_max must be greater than or equal to budget_min.")
+        return self
 
 
 class Recommendation(BaseModel):

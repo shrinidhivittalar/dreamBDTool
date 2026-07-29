@@ -45,9 +45,13 @@ def load_products(path: str | Path) -> list[Product]:
 
     columns = {key: _find_column(frame, aliases) for key, aliases in COLUMN_ALIASES.items()}
     products: list[Product] = []
+    seen_names: set[str] = set()
     for _, row in frame.iterrows():
         name = _text(row[name_column])
         if not name:
+            continue
+        needle = name.lower()
+        if needle in seen_names:
             continue
         try:
             price = float(row[price_column])
@@ -65,6 +69,13 @@ def load_products(path: str | Path) -> list[Product]:
                 rock_bottom = float(row[columns["rock_bottom_price"]])
             except (TypeError, ValueError):
                 pass
+            # Rock Bottom Price isn't used by the recommender yet (reserved
+            # for a future negotiation feature), so a bad value shouldn't
+            # drop an otherwise-valid, actively-used product — just treat
+            # it as unknown, the same way an unparseable value already is.
+            if rock_bottom is not None and rock_bottom > price:
+                rock_bottom = None
+        seen_names.add(needle)
         products.append(Product(
             name=name,
             selling_price=price,
