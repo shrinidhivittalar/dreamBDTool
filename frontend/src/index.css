@@ -44,7 +44,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .wizard-progress { height: 3px; margin: -8px 0 28px; overflow: hidden; border-radius: 99px; background: #eee5dd; }
 .wizard-progress span { display: block; height: 100%; border-radius: inherit; background: #bd285c; transition: width 150ms ease; }
 .wizard-step { animation: wizard-in 150ms ease both; }
-.budget-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.budget-inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.budget-inputs input { min-width: 0; }
 .stepper { display: flex; align-items: center; justify-content: space-between; width: 150px; border: 1px solid #d9cfc6; border-radius: 8px; background: #fffdfa; overflow: hidden; }
 .stepper button { width: 42px; height: 40px; border: 0; background: transparent; color: #bd285c; font-size: 20px; cursor: pointer; transition: background 150ms ease; }
 .stepper button:hover { background: #fff0f4; }
@@ -57,6 +58,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .wizard-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; } .wizard-actions .wizard-next { margin-top: 0; }
 .wizard-back { border: 0; background: transparent; color: #766b64; font-size: 13px; cursor: pointer; }
 .field-error { margin-top: 7px; font-size: 11px; font-weight: 700; color: #c0264f; }
+.field-note { margin-top: 7px; font-size: 11px; font-weight: 600; color: #a5690a; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; cursor: pointer; user-select: none; font-size: 12px; color: #514844; }
 .checkbox-row input[type='checkbox'] { width: 15px; height: 15px; accent-color: #bd285c; cursor: pointer; }
 .advanced-options { margin: 4px 0 6px; border: 1px solid #e4dcd4; border-radius: 10px; background: #fcf8f3; }

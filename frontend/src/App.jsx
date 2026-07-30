@@ -53,6 +53,8 @@ export function App() {
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const toggle = key => item => set(key, form[key].includes(item) ? form[key].filter(value => value !== item) : [...form[key], item])
   const budgetInvalid = form.budget_min > form.budget_max
+  const maxPossibleTotal = catalogRange ? form.item_count * catalogRange.max : null
+  const budgetTooHighForItems = !budgetInvalid && maxPossibleTotal !== null && maxPossibleTotal < form.budget_min
   const visibleCategories = form.sweet_preference === 'no_sweet' ? categories.filter(item => item !== 'Sweet') : categories
   const setSweetPreference = value => {
     set('sweet_preference', value)
@@ -129,13 +131,13 @@ export function App() {
           </div>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
           <aside className="card wizard-card h-fit p-5 sm:p-7">
             <div className="mb-7 flex items-center justify-between"><div><p className="wizard-kicker">New brief</p><h2 className="serif mt-1 text-2xl text-[#302a27]">Create a gift box</h2></div><span className="wizard-step-count">0{step} / 02</span></div>
             <div className="wizard-progress"><span style={{ width: `${step * 50}%` }} /></div>
             {step === 1 ? <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Let's set the basics</p><p className="mt-1 text-sm text-[#91857d]">Start with the shape and budget of the box.</p></div>
               <Field label="Budget range" hint={catalogRange ? `Catalog items ₹${Math.round(catalogRange.min)}–₹${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>₹</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => set(key, Math.max(0, Number(e.target.value)))} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}<label className="checkbox-row"><input type="checkbox" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} /><span>Prices already include GST</span></label></Field>
-              <Field label="Number of items"><div className="stepper"><button type="button" onClick={() => set('item_count', Math.max(1, form.item_count - 1))}>-</button><span>{form.item_count} <small>items</small></span><button type="button" onClick={() => set('item_count', Math.min(20, form.item_count + 1))}>+</button></div></Field>
+              <Field label="Number of items"><div className="stepper"><button type="button" onClick={() => set('item_count', Math.max(1, form.item_count - 1))}>-</button><span>{form.item_count} <small>items</small></span><button type="button" onClick={() => set('item_count', Math.min(20, form.item_count + 1))}>+</button></div>{budgetTooHighForItems && <p className="field-note">Even {form.item_count} of the priciest catalog items (₹{Math.round(catalogRange.max)} each) can't reach ₹{Math.round(form.budget_min).toLocaleString()}. Try raising the item count or enabling repeats.</p>}</Field>
               <Field label="Sweet preference"><div className="segmented-control">{sweetOptions.map(option => <button type="button" key={option.value} className={form.sweet_preference === option.value ? 'selected' : ''} onClick={() => setSweetPreference(option.value)}>{option.label}</button>)}</div></Field>
               <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) setStep(2) }} disabled={budgetInvalid}>Continue <span>→</span></button>
             </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
