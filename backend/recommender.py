@@ -342,6 +342,26 @@ def recommend(
     if k < 0:
         raise ValueError("Mandatory products exceed the requested item count.")
     if k > len(pool) and not request.allow_repeats:
+        if messages is not None:
+            active_filters = []
+            if request.excluded_products:
+                active_filters.append(f"excluded products ({', '.join(request.excluded_products)})")
+            if request.preferred_categories:
+                active_filters.append(f"categories ({', '.join(request.preferred_categories)})")
+            if request.preferred_vendors:
+                active_filters.append(f"vendors ({', '.join(request.preferred_vendors)})")
+            if request.sweet_preference != "any":
+                active_filters.append(f"sweet preference ({request.sweet_preference.replace('_', ' ')})")
+            if active_filters:
+                messages.append(
+                    f"Only {len(pool)} catalog item(s) match {', '.join(active_filters)} — not enough to fill "
+                    f"{k} more slot(s) for a {request.item_count}-item box. Check for typos, or loosen these filters."
+                )
+            else:
+                messages.append(
+                    f"Only {len(pool)} catalog item(s) are available — not enough to fill {k} more slot(s) "
+                    f"without repeats. Try enabling repeated products or lowering the item count."
+                )
         return []
 
     category_counts = Counter(category.strip().lower() for category in request.required_categories if category.strip())
@@ -382,12 +402,19 @@ def recommend(
 
     if messages is not None and scored:
         max_achievable = max(total for _, total, _, _ in scored)
+        min_achievable = min(total for _, total, _, _ in scored)
+        gst_note = "" if request.price_includes_gst else " (incl. GST)"
         if max_achievable < request.budget_min * 0.95:
-            gst_note = "" if request.price_includes_gst else " (incl. GST)"
             messages.append(
                 f"The priciest valid {request.item_count}-item combination for this brief comes to "
                 f"₹{round(max_achievable)}{gst_note} — try raising the item count or enabling repeated "
                 f"products to get closer to your ₹{round(request.budget_min)}–₹{round(request.budget_max)} range."
+            )
+        elif min_achievable > request.budget_max * 1.05:
+            messages.append(
+                f"The cheapest valid {request.item_count}-item combination for this brief comes to "
+                f"₹{round(min_achievable)}{gst_note} — try lowering the item count or raising your "
+                f"₹{round(request.budget_min)}–₹{round(request.budget_max)} range to get within budget."
             )
 
     return [Recommendation(

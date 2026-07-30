@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Field } from './components/Field'
 import { MultiSelect } from './components/MultiSelect'
+import { TagField } from './components/TagField'
 import { RecommendationCard } from './components/RecommendationCard'
-import { fetchRecommendations } from './lib/api'
+import { fetchProducts, fetchRecommendations } from './lib/api'
 
-const categories = ['Sweet', 'Savoury', 'Healthy', 'Cookies', 'Cakes']
-const vendors = ['Dream a Dozen', 'HealthyChef']
+// Only categories that actually exist in the catalog's taxonomy — "Cookies"
+// and "Cakes" were dropped because no product is ever categorized that way
+// (cupcakes/cake-pops live under "In-house sweet" / "outsourced Sweet"),
+// so those pills always returned zero matches.
+const categories = ['Sweet', 'Savoury', 'Healthy']
 const sweetOptions = [
   { value: 'any', label: 'No preference' },
   { value: 'sweet_only', label: 'Sweet only' },
@@ -20,7 +24,6 @@ const initialForm = {
   mandatory_products: '',
   preferred_products: '',
   excluded_products: '',
-  preferred_vendors: [],
   sweet_preference: 'any',
   price_includes_gst: false,
   allow_repeats: false,
@@ -28,15 +31,42 @@ const initialForm = {
 }
 
 export function App() {
+  const [step, setStep] = useState(1)
   const [form, setForm] = useState(initialForm)
   const [recommendations, setRecommendations] = useState([])
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [catalogSize, setCatalogSize] = useState(0)
   const [lastBrief, setLastBrief] = useState(null)
+  const [catalogRange, setCatalogRange] = useState(null)
+
+  useEffect(() => {
+    fetchProducts()
+      .then(products => {
+        if (!products.length) return
+        const prices = products.map(product => product.selling_price)
+        setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
+      })
+      .catch(() => {})
+  }, [])
 
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const toggle = key => item => set(key, form[key].includes(item) ? form[key].filter(value => value !== item) : [...form[key], item])
+  const budgetInvalid = form.budget_min > form.budget_max
+  const visibleCategories = form.sweet_preference === 'no_sweet' ? categories.filter(item => item !== 'Sweet') : categories
+  const setSweetPreference = value => {
+    set('sweet_preference', value)
+    if (value === 'no_sweet') set('preferred_categories', form.preferred_categories.filter(item => item !== 'Sweet'))
+  }
+  const tagsFor = key => form[key].split(',').map(value => value.trim()).filter(Boolean)
+  const addTag = (key, value) => set(key, [...new Set([...tagsFor(key), value.trim()])].filter(Boolean).join(', '))
+  const removeTag = (key, tag) => set(key, tagsFor(key).filter(value => value !== tag).join(', '))
+  const advancedCount = [
+    tagsFor('required_categories').length > 0,
+    tagsFor('preferred_products').length > 0,
+    tagsFor('excluded_products').length > 0,
+    form.allow_repeats,
+  ].filter(Boolean).length
 
   async function generate() {
     setLoading(true)
@@ -60,7 +90,7 @@ export function App() {
         budgetMax: payload.budget_max,
       })
     } catch (error) {
-      setMessage('Backend is not connected yet. Start FastAPI to generate live recommendations.')
+      setMessage(error.message)
       setRecommendations([])
     } finally {
       setLoading(false)
@@ -70,9 +100,9 @@ export function App() {
   return (
     <div className="min-h-screen">
       <header className="border-b border-[#e5dbd2] bg-[#f9f4ed]">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-5 lg:px-10">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-3 lg:px-10">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#bd285c] text-white serif text-xl">d</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#bd285c] text-white serif text-lg">d</div>
             <div>
               <div className="serif text-[19px] leading-none text-[#352e2b]">dream a dozen</div>
               <div className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-[#9b8f87]">BD toolkit</div>
@@ -86,115 +116,57 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-6 py-9 lg:px-10 lg:py-12">
-        <div className="mb-9 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <main className="mx-auto max-w-[1440px] px-6 py-5 lg:px-10 lg:py-6">
+        <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
           <div>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-[.2em] text-[#bd285c]">Corporate gifting / new brief</p>
-            <h1 className="serif text-4xl leading-tight text-[#302a27] md:text-[48px]">
-              Build a thoughtful<br /><span className="text-[#bd285c]">gift box.</span>
+            <p className="mb-1 text-[11px] font-bold uppercase tracking-[.2em] text-[#bd285c]">Corporate gifting / new brief</p>
+            <h1 className="serif text-2xl leading-tight text-[#302a27] md:text-[28px]">
+              Build a thoughtful <span className="text-[#bd285c]">gift box.</span>
             </h1>
           </div>
-          <div className="max-w-sm text-sm leading-6 text-[#766b64]">
+          <div className="max-w-sm text-xs leading-5 text-[#766b64]">
             Set the brief once. We'll surface combinations your client can actually use — priced with a little breathing room.
           </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-[350px_1fr] xl:grid-cols-[390px_1fr]">
-          <aside className="card h-fit p-6 shadow-[0_8px_30px_#5134240a]">
-            <div className="mb-6 flex items-center justify-between border-b border-[#eee5dd] pb-5">
-              <div>
-                <h2 className="serif text-[22px]">The brief</h2>
-                <p className="mt-1 text-xs text-[#91857d]">What are we putting together?</p>
-              </div>
-              <span className="rounded-full bg-[#fbedf1] px-3 py-1 text-[11px] font-bold text-[#b32758]">MVP</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Budget min">
-                <div className="input flex items-center gap-1">
-                  <span className="text-[#958980]">₹</span>
-                  <input className="flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form.budget_min} onChange={e => set('budget_min', Number(e.target.value))} />
-                </div>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
+          <aside className="card wizard-card h-fit p-5 sm:p-7">
+            <div className="mb-7 flex items-center justify-between"><div><p className="wizard-kicker">New brief</p><h2 className="serif mt-1 text-2xl text-[#302a27]">Create a gift box</h2></div><span className="wizard-step-count">0{step} / 02</span></div>
+            <div className="wizard-progress"><span style={{ width: `${step * 50}%` }} /></div>
+            {step === 1 ? <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Let's set the basics</p><p className="mt-1 text-sm text-[#91857d]">Start with the shape and budget of the box.</p></div>
+              <Field label="Budget range" hint={catalogRange ? `Catalog items ₹${Math.round(catalogRange.min)}–₹${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>₹</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => set(key, Math.max(0, Number(e.target.value)))} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}<label className="checkbox-row"><input type="checkbox" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} /><span>Prices already include GST</span></label></Field>
+              <Field label="Number of items"><div className="stepper"><button type="button" onClick={() => set('item_count', Math.max(1, form.item_count - 1))}>-</button><span>{form.item_count} <small>items</small></span><button type="button" onClick={() => set('item_count', Math.min(20, form.item_count + 1))}>+</button></div></Field>
+              <Field label="Sweet preference"><div className="segmented-control">{sweetOptions.map(option => <button type="button" key={option.value} className={form.sweet_preference === option.value ? 'selected' : ''} onClick={() => setSweetPreference(option.value)}>{option.label}</button>)}</div></Field>
+              <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) setStep(2) }} disabled={budgetInvalid}>Continue <span>→</span></button>
+            </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
+              <div className="recap-row"><span className="recap-label">Current brief</span><span className="recap-chip">₹{form.budget_min.toLocaleString()}–₹{form.budget_max.toLocaleString()}</span><span className="recap-chip">{form.item_count} items</span><span className="recap-chip">{form.sweet_preference === 'any' ? 'No preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
+              <Field label="Categories"><MultiSelect items={visibleCategories} selected={form.preferred_categories} onToggle={toggle('preferred_categories')} /></Field>
+              <Field label="Mandatory products" hint="press enter or use commas">
+                <TagField tags={tagsFor('mandatory_products')} placeholder="e.g. Brownie" onAdd={value => addTag('mandatory_products', value)} onRemove={tag => removeTag('mandatory_products', tag)} />
               </Field>
-              <Field label="Budget max">
-                <div className="input flex items-center gap-1">
-                  <span className="text-[#958980]">₹</span>
-                  <input className="flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form.budget_max} onChange={e => set('budget_max', Number(e.target.value))} />
+              <details className="advanced-options">
+                <summary><span>Advanced options{advancedCount ? ` · ${advancedCount} set` : ''}</span></summary>
+                <div className="advanced-body">
+                  <Field label="Required categories" hint="repeat one to require more than one, e.g. Cookie, Cookie">
+                    <TagField tags={tagsFor('required_categories')} placeholder="e.g. Brownie" onAdd={value => addTag('required_categories', value)} onRemove={tag => removeTag('required_categories', tag)} />
+                  </Field>
+                  <Field label="Preferred products" hint="nice to have, not guaranteed">
+                    <TagField tags={tagsFor('preferred_products')} placeholder="e.g. Cupcake" onAdd={value => addTag('preferred_products', value)} onRemove={tag => removeTag('preferred_products', tag)} />
+                  </Field>
+                  <Field label="Excluded products" hint="never include these">
+                    <TagField tags={tagsFor('excluded_products')} placeholder="e.g. Samosa" onAdd={value => addTag('excluded_products', value)} onRemove={tag => removeTag('excluded_products', tag)} />
+                  </Field>
+                  <label className="checkbox-row"><input type="checkbox" checked={form.allow_repeats} onChange={e => set('allow_repeats', e.target.checked)} /><span>Allow a product to repeat if needed to hit budget</span></label>
                 </div>
-              </Field>
-            </div>
-
-            <Field label="Items">
-              <input className="input" type="number" min="1" max="20" value={form.item_count} onChange={e => set('item_count', Number(e.target.value))} />
-            </Field>
-
-            <Field label="Sweet preference">
-              <div className="flex flex-wrap gap-2">
-                {sweetOptions.map(option => (
-                  <button
-                    type="button"
-                    key={option.value}
-                    className={`pill ${form.sweet_preference === option.value ? 'active' : ''}`}
-                    onClick={() => set('sweet_preference', option.value)}
-                  >
-                    {form.sweet_preference === option.value ? '✓ ' : ''}{option.label}
-                  </button>
-                ))}
-              </div>
-            </Field>
-
-            <Field label="Categories">
-              <MultiSelect items={categories} selected={form.preferred_categories} onToggle={toggle('preferred_categories')} />
-            </Field>
-
-            <Field label="Mandatory products" hint="comma separated — client asked for these">
-              <input className="input" placeholder="e.g. Brownie" value={form.mandatory_products} onChange={e => set('mandatory_products', e.target.value)} />
-            </Field>
-
-            <Field label="Required categories" hint="repeat a name for multiple slots — e.g. Brownie, Cookie, Cookie">
-              <input className="input" placeholder="e.g. Brownie, Cookie" value={form.required_categories} onChange={e => set('required_categories', e.target.value)} />
-            </Field>
-
-            <Field label="Preferred products" hint="comma separated — nice to have">
-              <input className="input" placeholder="e.g. Cookie" value={form.preferred_products} onChange={e => set('preferred_products', e.target.value)} />
-            </Field>
-
-            <Field label="Avoid products" hint="comma separated">
-              <input className="input" placeholder="e.g. Samosa" value={form.excluded_products} onChange={e => set('excluded_products', e.target.value)} />
-            </Field>
-
-            <Field label="Preferred vendors">
-              <MultiSelect items={vendors} selected={form.preferred_vendors} onToggle={toggle('preferred_vendors')} />
-            </Field>
-
-            <Field label="Repeats" hint="fills budget when the price ceiling is low">
-              <label className="flex items-center gap-2 text-sm text-[#4b423d]">
-                <input type="checkbox" className="h-4 w-4 accent-[#bd285c]" checked={form.allow_repeats} onChange={e => set('allow_repeats', e.target.checked)} />
-                Allow repeated products
-              </label>
-            </Field>
-
-            <Field label="GST" hint="unconfirmed — flip if this is wrong">
-              <label className="flex items-center gap-2 text-sm text-[#4b423d]">
-                <input type="checkbox" className="h-4 w-4 accent-[#bd285c]" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} />
-                Selling prices already include GST
-              </label>
-            </Field>
-
-            <button
-              onClick={generate}
-              disabled={loading}
-              className="mt-1 w-full rounded-lg bg-[#bd285c] px-4 py-3.5 text-sm font-bold text-white shadow-[0_5px_12px_#bd285c35] transition hover:bg-[#a71e4f] disabled:cursor-wait disabled:opacity-60"
-            >
-              {loading ? 'Finding a good fit…' : 'Generate gift boxes →'}
-            </button>
-          </aside>
-
-          <section>
-            <div className="mb-5 flex items-end justify-between">
+              </details>
+              <div className="summary-card"><div><span className="summary-label">Your brief</span><strong>₹{form.budget_min.toLocaleString()} – ₹{form.budget_max.toLocaleString()}</strong></div><span>{form.item_count} items</span><span>{form.preferred_categories.length ? form.preferred_categories.join(', ') : 'Any category'}</span><span>{form.sweet_preference === 'any' ? 'No sweet preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
+              <div className="wizard-actions"><button type="button" className="wizard-back" onClick={() => setStep(1)}>← Back</button><button onClick={generate} disabled={loading} className="wizard-next flex-1">{loading ? 'Finding a good fit…' : 'Generate recommendations'} <span>→</span></button></div>
+            </div>}
+          </aside>          <section>
+            <div className="mb-3 flex items-end justify-between">
               <div>
-                <p className="mb-1 text-xs font-bold uppercase tracking-[.18em] text-[#9a8d84]">Recommendations</p>
-                <h2 className="serif text-[30px]">A few good options</h2>
+                <p className="mb-0.5 text-xs font-bold uppercase tracking-[.18em] text-[#9a8d84]">Recommendations</p>
+                <h2 className="serif text-[20px]">A few good options</h2>
               </div>
               {recommendations.length > 0 && (
                 <span className="text-xs text-[#8e8179]">{recommendations.length} options, {catalogSize} products checked</span>
@@ -202,20 +174,20 @@ export function App() {
             </div>
 
             {message && (
-              <div className="mb-5 rounded-lg border border-[#eed3db] bg-[#fff4f6] px-4 py-3 text-sm text-[#a51f50]">{message}</div>
+              <div className="mb-3 rounded-lg border border-[#eed3db] bg-[#fff4f6] px-4 py-2.5 text-sm text-[#a51f50]">{message}</div>
             )}
 
             {recommendations.length === 0 ? (
-              <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-[#d8ccc2] bg-[#f9f4ed] px-8 text-center">
+              <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-[#d8ccc2] bg-[#f9f4ed] px-8 text-center">
                 <div className="max-w-sm">
-                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#f3dce3] text-2xl text-[#bd285c]">🎁</div>
-                  <h3 className="serif text-2xl">Ready when you are</h3>
+                  <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#f3dce3] text-xl text-[#bd285c]">🎁</div>
+                  <h3 className="serif text-xl">Ready when you are</h3>
                   <p className="mt-2 text-sm leading-6 text-[#83776f]">Fill in the brief on the left and we'll search every valid combination in the catalog for five sensible boxes.</p>
-                  <p className="mt-5 text-xs text-[#a39891]">Boxes inside your range rank first — nothing is ruled out for falling outside it.</p>
+                  <p className="mt-3 text-xs text-[#a39891]">Boxes inside your range rank first — nothing is ruled out for falling outside it.</p>
                 </div>
               </div>
             ) : (
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-3 xl:grid-cols-2">
                 {recommendations.map((recommendation, index) => (
                   <RecommendationCard
                     key={index}
@@ -233,9 +205,16 @@ export function App() {
         </div>
       </main>
 
-      <footer className="mx-auto max-w-[1440px] px-6 pb-8 text-xs text-[#a39891] lg:px-10">
+      <footer className="mx-auto max-w-[1440px] px-6 pb-4 text-xs text-[#a39891] lg:px-10">
         Dream a Dozen — Business development workspace
       </footer>
     </div>
   )
 }
+
+
+
+
+
+
+

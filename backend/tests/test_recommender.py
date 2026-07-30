@@ -299,3 +299,28 @@ def test_no_hint_when_budget_is_reachable():
     messages: list[str] = []
     recommend(_catalog(), request, messages=messages)
     assert messages == []
+
+
+def test_achievable_min_hint_when_catalog_price_floor_is_high():
+    catalog = [
+        Product(name="Deluxe Hamper", selling_price=500),
+        Product(name="Premium Box", selling_price=600),
+    ]
+    request = RecommendationRequest(budget_min=50, budget_max=100, item_count=2)
+    messages: list[str] = []
+    recommendations = recommend(catalog, request, messages=messages)
+    assert recommendations
+    assert messages
+    assert "cheapest" in messages[0].lower()
+
+
+def test_message_when_filters_leave_too_few_candidates():
+    request = RecommendationRequest(
+        budget_min=150, budget_max=300, item_count=3, preferred_categories=["Nonexistent Category"],
+    )
+    messages: list[str] = []
+    recommendations = recommend(_catalog(), request, messages=messages)
+    assert recommendations == []
+    assert messages
+    assert "categories" in messages[0].lower()
+    assert "check for typos" in messages[0].lower()
