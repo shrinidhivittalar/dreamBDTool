@@ -1,6 +1,0 @@
-INFO:     127.0.0.1:61327 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50295 - "POST /api/recommendations HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64621 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61623 - "GET /api/products HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52912 - "POST /api/recommendations HTTP/1.1" 200 OK
-INFO:     127.0.0.1:61945 - "GET /health HTTP/1.1" 200 OK
