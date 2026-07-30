@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -20,7 +21,11 @@ CATALOG_PATH = CATALOG if CATALOG.exists() else FALLBACK_CATALOG
 products: list[Product] = load_products(CATALOG_PATH)
 
 app = FastAPI(title="Dream a Dozen Gift Box Recommendation Tool")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
+# ALLOWED_ORIGINS is a comma-separated list (e.g. the deployed frontend's
+# Render URL); defaults to the local Vite dev server so nothing extra is
+# needed for local development.
+allowed_origins = [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["*"], allow_headers=["*"])
 
 
 @app.get("/health")

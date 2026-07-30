@@ -1,4 +1,7 @@
-const API = ''
+// In local dev, Vite's proxy forwards /api to the backend, so '' (relative)
+// works. In production the frontend and backend are separate Render
+// services on different hosts, so VITE_API_URL must point at the backend.
+const API = import.meta.env.VITE_API_URL || ''
 
 export async function fetchProducts() {
   const response = await fetch(`${API}/api/products`)
