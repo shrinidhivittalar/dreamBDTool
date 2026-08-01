@@ -5,7 +5,7 @@ import { TagField } from './components/TagField'
 import { RecommendationCard } from './components/RecommendationCard'
 import { fetchProducts, fetchRecommendations } from './lib/api'
 
-// Only categories that actually exist in the catalog's taxonomy — "Cookies"
+// Only categories that actually exist in the catalog's taxonomy ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â "Cookies"
 // and "Cakes" were dropped because no product is ever categorized that way
 // (cupcakes/cake-pops live under "In-house sweet" / "outsourced Sweet"),
 // so those pills always returned zero matches.
@@ -26,7 +26,7 @@ const initialForm = {
   excluded_products: '',
   sweet_preference: 'any',
   price_includes_gst: false,
-  allow_repeats: false,
+  include_themed_customised: false,
   required_categories: '',
 }
 
@@ -67,7 +67,7 @@ export function App() {
     tagsFor('required_categories').length > 0,
     tagsFor('preferred_products').length > 0,
     tagsFor('excluded_products').length > 0,
-    form.allow_repeats,
+    form.include_themed_customised,
   ].filter(Boolean).length
 
   async function generate() {
@@ -88,8 +88,6 @@ export function App() {
       setLastBrief({
         mandatoryProducts: payload.mandatory_products,
         requiredCategories: payload.required_categories,
-        budgetMin: payload.budget_min,
-        budgetMax: payload.budget_max,
       })
     } catch (error) {
       setMessage(error.message)
@@ -127,7 +125,7 @@ export function App() {
             </h1>
           </div>
           <div className="max-w-sm text-xs leading-5 text-[#766b64]">
-            Set the brief once. We'll surface combinations your client can actually use — priced with a little breathing room.
+            Set the brief once. We'll surface combinations your client can actually use ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â priced with a little breathing room.
           </div>
         </div>
 
@@ -136,18 +134,18 @@ export function App() {
             <div className="mb-7 flex items-center justify-between"><div><p className="wizard-kicker">New brief</p><h2 className="serif mt-1 text-2xl text-[#302a27]">Create a gift box</h2></div><span className="wizard-step-count">0{step} / 02</span></div>
             <div className="wizard-progress"><span style={{ width: `${step * 50}%` }} /></div>
             {step === 1 ? <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Let's set the basics</p><p className="mt-1 text-sm text-[#91857d]">Start with the shape and budget of the box.</p></div>
-              <Field label="Budget range" hint={catalogRange ? `Catalog items ₹${Math.round(catalogRange.min)}–₹${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>₹</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => set(key, Math.max(0, Number(e.target.value)))} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}<label className="checkbox-row"><input type="checkbox" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} /><span>Prices already include GST</span></label></Field>
-              <Field label="Number of items"><div className="stepper"><button type="button" onClick={() => set('item_count', Math.max(1, form.item_count - 1))}>-</button><span>{form.item_count} <small>items</small></span><button type="button" onClick={() => set('item_count', Math.min(20, form.item_count + 1))}>+</button></div>{budgetTooHighForItems && <p className="field-note">Even {form.item_count} of the priciest catalog items (₹{Math.round(catalogRange.max)} each) can't reach ₹{Math.round(form.budget_min).toLocaleString()}. Try raising the item count or enabling repeats.</p>}</Field>
+              <Field label="Budget range" hint={catalogRange ? `Catalog items ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹${Math.round(catalogRange.min)}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => set(key, Math.max(0, Number(e.target.value)))} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}<label className="checkbox-row"><input type="checkbox" checked={form.price_includes_gst} onChange={e => set('price_includes_gst', e.target.checked)} /><span>Prices already include GST</span></label></Field>
+              <Field label="Number of items"><div className="stepper"><button type="button" onClick={() => set('item_count', Math.max(1, form.item_count - 1))}>-</button><span>{form.item_count} <small>items</small></span><button type="button" onClick={() => set('item_count', Math.min(20, form.item_count + 1))}>+</button></div>{budgetTooHighForItems && <p className="field-note">Even {form.item_count} of the priciest catalog items (ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{Math.round(catalogRange.max)} each) can't reach ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{Math.round(form.budget_min).toLocaleString()}. Try raising the item count or enabling repeats.</p>}</Field>
               <Field label="Sweet preference"><div className="segmented-control">{sweetOptions.map(option => <button type="button" key={option.value} className={form.sweet_preference === option.value ? 'selected' : ''} onClick={() => setSweetPreference(option.value)}>{option.label}</button>)}</div></Field>
-              <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) setStep(2) }} disabled={budgetInvalid}>Continue <span>→</span></button>
+              <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) setStep(2) }} disabled={budgetInvalid}>Continue <span>ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢</span></button>
             </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
-              <div className="recap-row"><span className="recap-label">Current brief</span><span className="recap-chip">₹{form.budget_min.toLocaleString()}–₹{form.budget_max.toLocaleString()}</span><span className="recap-chip">{form.item_count} items</span><span className="recap-chip">{form.sweet_preference === 'any' ? 'No preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
+              <div className="recap-row"><span className="recap-label">Current brief</span><span className="recap-chip">ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{form.budget_min.toLocaleString()}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{form.budget_max.toLocaleString()}</span><span className="recap-chip">{form.item_count} items</span><span className="recap-chip">{form.sweet_preference === 'any' ? 'No preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
               <Field label="Categories"><MultiSelect items={visibleCategories} selected={form.preferred_categories} onToggle={toggle('preferred_categories')} /></Field>
               <Field label="Mandatory products" hint="press enter or use commas">
                 <TagField tags={tagsFor('mandatory_products')} placeholder="e.g. Brownie" onAdd={value => addTag('mandatory_products', value)} onRemove={tag => removeTag('mandatory_products', tag)} />
               </Field>
               <details className="advanced-options">
-                <summary><span>Advanced options{advancedCount ? ` · ${advancedCount} set` : ''}</span></summary>
+                <summary><span>Advanced options{advancedCount ? ` Ãƒâ€šÃ‚Â· ${advancedCount} set` : ''}</span></summary>
                 <div className="advanced-body">
                   <Field label="Required categories" hint="repeat one to require more than one, e.g. Cookie, Cookie">
                     <TagField tags={tagsFor('required_categories')} placeholder="e.g. Brownie" onAdd={value => addTag('required_categories', value)} onRemove={tag => removeTag('required_categories', tag)} />
@@ -158,11 +156,11 @@ export function App() {
                   <Field label="Excluded products" hint="never include these">
                     <TagField tags={tagsFor('excluded_products')} placeholder="e.g. Samosa" onAdd={value => addTag('excluded_products', value)} onRemove={tag => removeTag('excluded_products', tag)} />
                   </Field>
-                  <label className="checkbox-row"><input type="checkbox" checked={form.allow_repeats} onChange={e => set('allow_repeats', e.target.checked)} /><span>Allow a product to repeat if needed to hit budget</span></label>
+                  <label className="checkbox-row"><input type="checkbox" checked={form.include_themed_customised} onChange={e => set('include_themed_customised', e.target.checked)} /><span>Include themed or customised items</span></label>
                 </div>
               </details>
-              <div className="summary-card"><div><span className="summary-label">Your brief</span><strong>₹{form.budget_min.toLocaleString()} – ₹{form.budget_max.toLocaleString()}</strong></div><span>{form.item_count} items</span><span>{form.preferred_categories.length ? form.preferred_categories.join(', ') : 'Any category'}</span><span>{form.sweet_preference === 'any' ? 'No sweet preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
-              <div className="wizard-actions"><button type="button" className="wizard-back" onClick={() => setStep(1)}>← Back</button><button onClick={generate} disabled={loading} className="wizard-next flex-1">{loading ? 'Finding a good fit…' : 'Generate recommendations'} <span>→</span></button></div>
+              <div className="summary-card"><div><span className="summary-label">Your brief</span><strong>ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{form.budget_min.toLocaleString()} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹{form.budget_max.toLocaleString()}</strong></div><span>{form.item_count} items</span><span>{form.preferred_categories.length ? form.preferred_categories.join(', ') : 'Any category'}</span><span>{form.sweet_preference === 'any' ? 'No sweet preference' : sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
+              <div className="wizard-actions"><button type="button" className="wizard-back" onClick={() => setStep(1)}>ÃƒÂ¢Ã¢â‚¬Â Ã‚Â Back</button><button onClick={generate} disabled={loading} className="wizard-next flex-1">{loading ? 'Finding a good fitÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'Generate recommendations'} <span>ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢</span></button></div>
             </div>}
           </aside>          <section>
             <div className="mb-3 flex items-end justify-between">
@@ -182,10 +180,10 @@ export function App() {
             {recommendations.length === 0 ? (
               <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-[#d8ccc2] bg-[#f9f4ed] px-8 text-center">
                 <div className="max-w-sm">
-                  <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#f3dce3] text-xl text-[#bd285c]">🎁</div>
+                  <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#f3dce3] text-xl text-[#bd285c]">ÃƒÂ°Ã…Â¸Ã…Â½Ã‚Â</div>
                   <h3 className="serif text-xl">Ready when you are</h3>
                   <p className="mt-2 text-sm leading-6 text-[#83776f]">Fill in the brief on the left and we'll search every valid combination in the catalog for five sensible boxes.</p>
-                  <p className="mt-3 text-xs text-[#a39891]">Boxes inside your range rank first — nothing is ruled out for falling outside it.</p>
+                  <p className="mt-3 text-xs text-[#a39891]">Boxes inside your range rank first ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nothing is ruled out for falling outside it.</p>
                 </div>
               </div>
             ) : (
@@ -197,8 +195,6 @@ export function App() {
                     index={index}
                     mandatoryProducts={lastBrief?.mandatoryProducts ?? []}
                     requiredCategories={lastBrief?.requiredCategories ?? []}
-                    budgetMin={lastBrief?.budgetMin ?? 0}
-                    budgetMax={lastBrief?.budgetMax ?? 0}
                   />
                 ))}
               </div>
@@ -208,7 +204,7 @@ export function App() {
       </main>
 
       <footer className="mx-auto max-w-[1440px] px-6 pb-4 text-xs text-[#a39891] lg:px-10">
-        Dream a Dozen — Business development workspace
+        Dream a Dozen ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Business development workspace
       </footer>
     </div>
   )

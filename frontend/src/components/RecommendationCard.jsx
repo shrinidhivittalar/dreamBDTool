@@ -3,21 +3,6 @@ import { matchesAny, matchingCategory } from '../lib/match'
 
 const ACCENT = '#bd285c'
 
-function isInHouse(product) {
-  return product.vendor === 'Dream a Dozen' || (product.sourcing || '').toLowerCase().includes('in-house')
-}
-
-function isHealthy(product) {
-  return (product.tags || []).some(tag => tag.toLowerCase().includes('healthy'))
-}
-
-function describeFit(total, budgetMin, budgetMax) {
-  if (!budgetMax) return null
-  if (total < budgetMin) return `${money(budgetMin - total)} under range`
-  if (total > budgetMax) return `${money(total - budgetMax)} over range`
-  return 'Within range'
-}
-
 function groupByProduct(products) {
   const groups = []
   const indexByName = new Map()
@@ -32,17 +17,8 @@ function groupByProduct(products) {
   return groups
 }
 
-export function RecommendationCard({ recommendation, index, mandatoryProducts, requiredCategories, budgetMin, budgetMax }) {
-  const inHouseCount = recommendation.products.filter(isInHouse).length
-  const healthyCount = recommendation.products.filter(isHealthy).length
+export function RecommendationCard({ recommendation, index, mandatoryProducts, requiredCategories }) {
   const groupedProducts = groupByProduct(recommendation.products)
-  const hasRepeats = groupedProducts.some(group => group.count > 1)
-  const highlights = [
-    describeFit(recommendation.total_price, budgetMin, budgetMax),
-    inHouseCount > 0 ? `${inHouseCount} in-house` : null,
-    healthyCount > 0 ? `${healthyCount} healthy` : null,
-    hasRepeats ? 'repeats a product' : null,
-  ].filter(Boolean).join(' · ')
 
   return (
     <article className="card option-card overflow-hidden" style={{ borderLeft: `4px solid ${ACCENT}` }}>
@@ -51,10 +27,7 @@ export function RecommendationCard({ recommendation, index, mandatoryProducts, r
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f7dce5] text-xs font-bold text-[#b32758]">
             {String(index + 1).padStart(2, '0')}
           </span>
-          <div>
-            <h3 className="text-sm font-bold text-[#3a322e]">Option {index + 1}</h3>
-            {highlights && <p className="text-[11px] text-[#9a8d84]">{highlights}</p>}
-          </div>
+          <h3 className="text-sm font-bold text-[#3a322e]">Option {index + 1}</h3>
         </div>
         {index === 0 && (
           <span className="rounded-full bg-[#e8f3ec] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#4c8664]">Top pick</span>

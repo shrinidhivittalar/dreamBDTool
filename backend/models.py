@@ -27,6 +27,7 @@ class RecommendationRequest(BaseModel):
     allow_repeats: bool = False
     required_categories: list[str] = Field(default_factory=list)
     price_includes_gst: bool = False
+    include_themed_customised: bool = False
 
     @model_validator(mode="after")
     def _validate_budget_range(self) -> "RecommendationRequest":
