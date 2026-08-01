@@ -8,7 +8,7 @@ except ImportError:
     from models import Product, Recommendation, RecommendationRequest
 
 
-# Scoring weights, GST rate, and DP resolution cap — assumptions pending
+# Scoring weights, GST rate, and DP resolution cap ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â assumptions pending
 # BD/finance sign-off, see BUSINESS_RULE_ASSUMPTIONS.md.
 IN_HOUSE_WEIGHT = 3
 HEALTHY_WEIGHT = 2
@@ -18,20 +18,30 @@ PREFERRED_WEIGHT = 5
 GST_RATE = 0.05
 # Caps dp_history's (items, layers, price-buckets, quota-progress) cell
 # count; float32 so this stays ~200MB at the cap. Exceeding it coarsens the
-# price bucket width, not correctness — see _search_pool.
+# price bucket width, not correctness ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â see _search_pool.
 CELL_BUDGET = 50_000_000
 # Tried strictest-first: only fall back to a looser overlap allowance once
 # the stricter one can't fill every slot, so repeats across options stay as
 # rare as the catalog allows rather than jumping straight to "anything goes".
 OVERLAP_LEVELS = (0.25, 0.4, 0.55, 0.7)
 # A candidate only competes on diversity if its score is within this
-# fraction of the best score — keeps a hunt for variety from dragging in a
+# fraction of the best score ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â keeps a hunt for variety from dragging in a
 # dramatically worse fit just because it doesn't overlap with the rest.
 QUALITY_FLOOR_RATIO = 0.85
-# Number of *distinct* requested categories, not total slots — bounds the
+# Number of *distinct* requested categories, not total slots ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â bounds the
 # quota-progress dimension's multiplier the same way item_count<=20 bounds
 # the price/count dimensions.
 MAX_CATEGORY_GROUPS = 6
+# Categories are deliberately defined in one place so the business can
+# revise the grouping without changing the search algorithm. A product can
+# belong to more than one group: "Healthy - Savoury", for example, consumes
+# both the healthy and savoury slots in a box.
+UNIQUE_CATEGORY_GROUPS = ("sweet", "savoury", "healthy")
+MAX_UNIQUE_CATEGORY_GROUPS = 8
+# These items are client-facing customisation choices, not default box items.
+# Keep this list explicit so future opt-in catalog items are easy to add.
+THEMED_CUSTOMISED_PRODUCT_MARKERS = ("theme cupcake",)
+THEMED_CUSTOMISED_CATEGORY_MARKERS = ("customisation",)
 
 
 def _matches(value: str, requested: str) -> bool:
@@ -41,6 +51,32 @@ def _matches(value: str, requested: str) -> bool:
 def _category_match(product: Product, category: str) -> bool:
     return _matches(product.category, category) or any(_matches(tag, category) for tag in product.tags)
 
+def _unique_category_groups(product: Product) -> set[str]:
+    """Return the broad category slots occupied by a product.
+
+    Known broad groups intentionally collapse labels such as "In-house
+    sweet" and "outsourced Sweet" into "sweet". For a future catalog
+    category that is not in the configured groups, its normalized category
+    label remains its own slot instead of being ignored.
+    """
+    groups = {group for group in UNIQUE_CATEGORY_GROUPS if _category_match(product, group)}
+    if groups:
+        return groups
+    fallback = product.category.strip().lower()
+    return {fallback} if fallback else set()
+
+
+
+def _is_themed_or_customised(product: Product) -> bool:
+    return (
+        any(_matches(product.name, marker) for marker in THEMED_CUSTOMISED_PRODUCT_MARKERS)
+        or any(_matches(product.category, marker) for marker in THEMED_CUSTOMISED_CATEGORY_MARKERS)
+        or any(any(_matches(tag, marker) for marker in THEMED_CUSTOMISED_CATEGORY_MARKERS) for tag in product.tags)
+    )
+
+
+def _is_explicitly_mandatory(product: Product, mandatory_products: list[str]) -> bool:
+    return any(_matches(product.name, wanted) for wanted in mandatory_products)
 
 def _is_in_house(product: Product) -> bool:
     return "in-house" in product.sourcing.lower() or "dream a dozen" in product.vendor.lower()
@@ -66,7 +102,7 @@ def _closeness(total: float, budget_min: float, budget_max: float) -> float:
     """Reward staying within [budget_min, budget_max]; penalize drifting
     outside on either side.
 
-    No branch discards a total — falling outside the range only lowers the
+    No branch discards a total ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â falling outside the range only lowers the
     score. There is deliberately no hard cutoff.
     """
     if budget_min <= total <= budget_max:
@@ -112,8 +148,8 @@ def _search_pool(
 
     dp_history[i][j][t][q1..qC] = max total bonus achievable using exactly
     j items from pool[:i] whose (bucketed) prices sum to t, having filled
-    q_g slots of category group g so far. Every reachable t is kept —
-    there is no "t <= budget" pruning — so combinations above the budget
+    q_g slots of category group g so far. Every reachable t is kept ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
+    there is no "t <= budget" pruning ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â so combinations above the budget
     are still found and scored, just via the closeness curve, not
     excluded here. With no quota groups this degenerates to a plain 3D
     array, unchanged from the pre-quota implementation.
@@ -134,7 +170,7 @@ def _search_pool(
     at the current (j, t, q); once they match, that item is exhausted and i
     decrements. For 0/1, every use immediately decrements i.
 
-    Each item offers a "free" transition (identical to the no-quota code —
+    Each item offers a "free" transition (identical to the no-quota code ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
     it never touches the quota axes, so it works unchanged whether or not
     quota axes exist) plus one "advance group g" transition per category
     it matches, which additionally shifts that group's progress axis by
@@ -251,6 +287,62 @@ def _search_pool(
     return results
 
 
+# Category-unique search is defined before the diversity selector.
+def _search_unique_pool(
+    pool: list[Product],
+    k: int,
+    preferred: list[str],
+    group_keys: tuple[str, ...],
+    quota_counts: tuple[int, ...],
+    unique_category_keys: tuple[str, ...],
+) -> list[tuple[float, list[int]]]:
+    """Find every reachable, product-unique and category-unique box.
+
+    The state stores its chosen items directly. That makes this separate
+    constraint layer easy to change: edit UNIQUE_CATEGORY_GROUPS above,
+    rather than the recommendation ranking or API contract.
+    """
+    positions = {key: position for position, key in enumerate(unique_category_keys)}
+    product_masks = [
+        sum(1 << positions[group] for group in _unique_category_groups(product))
+        for product in pool
+    ]
+    buckets = [max(1, round(product.selling_price)) for product in pool]
+    final_quota = tuple(quota_counts)
+    # (item count, price bucket, quota progress, occupied category slots)
+    states: dict[tuple[int, int, tuple[int, ...], int], tuple[float, tuple[int, ...]]] = {
+        (0, 0, (0,) * len(group_keys), 0): (0.0, ())
+    }
+
+    for index, product in enumerate(pool):
+        next_states = states.copy()  # Snapshot keeps this a 0/1 search.
+        product_mask = product_masks[index]
+        product_bonus = _bonus_value(product, preferred)
+        matches = [group for group, key in enumerate(group_keys) if _category_match(product, key)]
+        for (count, total, progress, occupied), (bonus, items) in states.items():
+            if count == k or occupied & product_mask:
+                continue
+            transitions = [progress]
+            for group in matches:
+                if progress[group] < quota_counts[group]:
+                    advanced = list(progress)
+                    advanced[group] += 1
+                    transitions.append(tuple(advanced))
+            for next_progress in transitions:
+                state = (count + 1, total + buckets[index], next_progress, occupied | product_mask)
+                candidate = (bonus + product_bonus, items + (index,))
+                current = next_states.get(state)
+                if current is None or candidate[0] > current[0]:
+                    next_states[state] = candidate
+        states = next_states
+
+    return [
+        (bonus, list(items))
+        for (count, _total, progress, _occupied), (bonus, items) in states.items()
+        if count == k and progress == final_quota
+    ]
+
+
 def _pick_within_threshold(
     candidates: list[tuple[float, float, list[Product], Counter]],
     k: int,
@@ -259,7 +351,7 @@ def _pick_within_threshold(
 ) -> tuple[list[tuple[float, float, list[Product]]], list[Counter]]:
     """Greedily take candidates (already score-sorted) up to `limit`,
     skipping any whose overlap with an already-picked combo exceeds
-    `threshold`. `threshold=None` means no overlap constraint at all —
+    `threshold`. `threshold=None` means no overlap constraint at all ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
     just take the next-best distinct combos.
     """
     picked: list[tuple[float, float, list[Product]]] = []
@@ -280,11 +372,11 @@ def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k
     without sacrificing quality *or* diversity wholesale to get there.
 
     Two guardrails, tried in order:
-    1. Quality floor — only candidates within QUALITY_FLOOR_RATIO of the
+    1. Quality floor ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â only candidates within QUALITY_FLOOR_RATIO of the
        best score are eligible at all. Otherwise, hunting for a distinct
        option could drag in something dramatically worse just because it
        doesn't overlap with the good ones already picked.
-    2. Graduated overlap — within that eligible set, try the strictest
+    2. Graduated overlap ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â within that eligible set, try the strictest
        overlap allowance first (OVERLAP_LEVELS) and only loosen it if that
        can't fill every slot, so repeats across options stay as rare as
        the catalog allows rather than jumping straight to "ignore overlap
@@ -324,7 +416,16 @@ def recommend(
     limit: int = 5,
     messages: list[str] | None = None,
 ) -> list[Recommendation]:
+    if request.allow_repeats:
+        raise ValueError("Repeated products are no longer supported; every box must contain unique products and categories.")
+
     candidates = [product for product in products if not any(_matches(product.name, excluded) for excluded in request.excluded_products)]
+    if not request.include_themed_customised:
+        candidates = [
+            product for product in candidates
+            if not _is_themed_or_customised(product)
+            or _is_explicitly_mandatory(product, request.mandatory_products)
+        ]
     if request.preferred_categories:
         candidates = [product for product in candidates if any(_category_match(product, category) for category in request.preferred_categories)]
     if request.preferred_vendors:
@@ -337,6 +438,23 @@ def recommend(
     mandatory_indices = _resolve_mandatory(candidates, request.mandatory_products)
     mandatory_items = [candidates[i] for i in sorted(mandatory_indices)]
     pool = [product for i, product in enumerate(candidates) if i not in mandatory_indices]
+    unique_category_keys = tuple(sorted({group for product in candidates for group in _unique_category_groups(product)}))
+    if len(unique_category_keys) > MAX_UNIQUE_CATEGORY_GROUPS:
+        raise ValueError(
+            f"The catalog has {len(unique_category_keys)} category groups after filtering; "
+            f"at most {MAX_UNIQUE_CATEGORY_GROUPS} are supported."
+        )
+    category_positions = {key: position for position, key in enumerate(unique_category_keys)}
+    mandatory_mask = 0
+    for product in mandatory_items:
+        product_mask = sum(1 << category_positions[group] for group in _unique_category_groups(product))
+        if mandatory_mask & product_mask:
+            raise ValueError("Mandatory products must be from different categories.")
+        mandatory_mask |= product_mask
+    pool = [
+        product for product in pool
+        if not (mandatory_mask & sum(1 << category_positions[group] for group in _unique_category_groups(product)))
+    ]
 
     k = request.item_count - len(mandatory_items)
     if k < 0:
@@ -354,12 +472,12 @@ def recommend(
                 active_filters.append(f"sweet preference ({request.sweet_preference.replace('_', ' ')})")
             if active_filters:
                 messages.append(
-                    f"Only {len(pool)} catalog item(s) match {', '.join(active_filters)} — not enough to fill "
+                    f"Only {len(pool)} catalog item(s) match {', '.join(active_filters)} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â not enough to fill "
                     f"{k} more slot(s) for a {request.item_count}-item box. Check for typos, or loosen these filters."
                 )
             else:
                 messages.append(
-                    f"Only {len(pool)} catalog item(s) are available — not enough to fill {k} more slot(s) "
+                    f"Only {len(pool)} catalog item(s) are available ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â not enough to fill {k} more slot(s) "
                     f"without repeats. Try enabling repeated products or lowering the item count."
                 )
         return []
@@ -392,7 +510,9 @@ def recommend(
         )][:limit]
 
     scored: list[tuple[float, float, list[Product], Counter]] = []
-    for bonus_sum, item_indices in _search_pool(pool, k, request.preferred_products, request.allow_repeats, group_keys, quota_counts):
+    for bonus_sum, item_indices in _search_unique_pool(
+        pool, k, request.preferred_products, group_keys, quota_counts, unique_category_keys,
+    ):
         pool_items = [pool[i] for i in item_indices]
         raw_total = mandatory_total + sum(product.selling_price for product in pool_items)
         total = raw_total * gst_multiplier
@@ -400,23 +520,26 @@ def recommend(
         scored.append((score, total, mandatory_items + pool_items, Counter(item_indices)))
     scored.sort(key=lambda entry: entry[0], reverse=True)
 
-    if messages is not None and scored:
-        max_achievable = max(total for _, total, _, _ in scored)
-        min_achievable = min(total for _, total, _, _ in scored)
-        gst_note = "" if request.price_includes_gst else " (incl. GST)"
-        if max_achievable < request.budget_min * 0.95:
+    if messages is not None:
+        if not scored:
             messages.append(
-                f"The priciest valid {request.item_count}-item combination for this brief comes to "
-                f"₹{round(max_achievable)}{gst_note} — try raising the item count or enabling repeated "
-                f"products to get closer to your ₹{round(request.budget_min)}–₹{round(request.budget_max)} range."
+                "No valid combination has enough distinct product categories for this item count. Try lowering the item count."
             )
-        elif min_achievable > request.budget_max * 1.05:
-            messages.append(
-                f"The cheapest valid {request.item_count}-item combination for this brief comes to "
-                f"₹{round(min_achievable)}{gst_note} — try lowering the item count or raising your "
-                f"₹{round(request.budget_min)}–₹{round(request.budget_max)} range to get within budget."
-            )
-
+        else:
+            max_achievable = max(total for _, total, _, _ in scored)
+            min_achievable = min(total for _, total, _, _ in scored)
+            gst_note = "" if request.price_includes_gst else " (incl. GST)"
+            if max_achievable < request.budget_min * 0.95:
+                messages.append(
+                    f"The priciest valid {request.item_count}-item combination for this brief comes to "
+                    f"ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(max_achievable)}{gst_note} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â try raising the item count to get closer to your ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(request.budget_min)}ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(request.budget_max)} range."
+                )
+            elif min_achievable > request.budget_max * 1.05:
+                messages.append(
+                    f"The cheapest valid {request.item_count}-item combination for this brief comes to "
+                    f"ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(min_achievable)}{gst_note} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â try lowering the item count or raising your "
+                    f"ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(request.budget_min)}ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹{round(request.budget_max)} range to get within budget."
+                )
     return [Recommendation(
         products=combo,
         total_price=round(total, 2),
