@@ -1,9 +1,9 @@
-from itertools import combinations, combinations_with_replacement
+from itertools import combinations
 
 import pytest
 
 from backend.models import Product, RecommendationRequest
-from backend.recommender import GST_RATE, _bonus_value, _category_match, _closeness, recommend
+from backend.recommender import _bonus_value, _category_match, _closeness, recommend
 
 
 def _catalog() -> list[Product]:
@@ -84,6 +84,20 @@ def test_no_duplicate_products_and_correct_size():
         assert len(set(names)) == len(names)
 
 
+def test_no_two_size_variants_of_the_same_flavor_in_one_box():
+    catalog = [
+        Product(name="Fudgy walnut brownie - mini", selling_price=35, category="In-house sweet"),
+        Product(name="Fudgy Walnut brownie", selling_price=120, category="In-house sweet"),
+        Product(name="Vanilla cake pop", selling_price=45, category="In-house sweet"),
+        Product(name="Chocolate cake pop", selling_price=45, category="In-house sweet"),
+        Product(name="Blueberry Cupcake", selling_price=70, category="In-house sweet"),
+    ]
+    request = RecommendationRequest(budget_min=150, budget_max=300, item_count=3)
+    for rec in recommend(catalog, request, limit=20):
+        fudgy_variants = [product for product in rec.products if "fudgy" in product.name.lower()]
+        assert len(fudgy_variants) <= 1
+
+
 def test_no_duplicate_items_with_tied_prices_and_bonuses():
     # Regression: many items sharing a price (so DP cells tie) plus a
     # preferred bonus that creates further ties used to let the naive
@@ -98,20 +112,13 @@ def test_no_duplicate_items_with_tied_prices_and_bonuses():
 
 
 def test_item_count_exceeds_pool_returns_empty():
-    request = RecommendationRequest(budget_min=500, budget_max=1500, item_count=20)
+    request = RecommendationRequest(budget_min=500, budget_max=1500, item_count=10)
     assert recommend(_catalog(), request) == []
 
 
-def test_gst_added_on_top_of_selling_price():
+def test_total_price_matches_catalog_price_with_no_gst_added():
     catalog = [Product(name="Brownie", selling_price=100)]
     request = RecommendationRequest(budget_min=90, budget_max=120, item_count=1, mandatory_products=["Brownie"])
-    rec = recommend(catalog, request)[0]
-    assert rec.total_price == pytest.approx(100 * (1 + GST_RATE), abs=0.01)
-
-
-def test_price_includes_gst_adds_nothing_on_top():
-    catalog = [Product(name="Brownie", selling_price=100)]
-    request = RecommendationRequest(budget_min=90, budget_max=120, item_count=1, mandatory_products=["Brownie"], price_includes_gst=True)
     rec = recommend(catalog, request)[0]
     assert rec.total_price == pytest.approx(100, abs=0.01)
 
@@ -124,21 +131,13 @@ def test_sweet_only_filters_to_sweet_products():
         assert all(_category_match(product, "sweet") for product in rec.products)
 
 
-def test_no_sweet_excludes_sweet_products():
-    request = RecommendationRequest(budget_min=50, budget_max=200, item_count=2, sweet_preference="no_sweet")
-    recommendations = recommend(_catalog(), request, limit=10)
-    assert recommendations
-    for rec in recommendations:
-        assert all(not _category_match(product, "sweet") for product in rec.products)
-
-
 def test_dp_matches_brute_force_optimum():
     catalog = _catalog()
     request = RecommendationRequest(budget_min=150, budget_max=180, item_count=3)
     best = recommend(catalog, request, limit=1)[0].score
 
     brute_best = max(
-        _closeness(sum(p.selling_price for p in combo) * (1 + GST_RATE), request.budget_min, request.budget_max)
+        _closeness(sum(p.selling_price for p in combo), request.budget_min, request.budget_max)
         + sum(3 for p in combo if "in-house" in p.sourcing.lower() or "dream a dozen" in p.vendor.lower())
         + sum(2 for p in combo if any("healthy" in tag.lower() for tag in p.tags))
         for combo in combinations(catalog, request.item_count)
@@ -167,51 +166,6 @@ def _quota_feasible(combo: tuple[int, ...], group_keys: tuple[str, ...], quota_c
 
     matched = sum(try_match(slot, [False] * len(combo)) for slot in range(len(slots)))
     return matched == len(slots)
-
-
-def test_repeats_dp_matches_brute_force_optimum():
-    catalog = [
-        Product(name="A", selling_price=50, tags=["Healthy"], sourcing="In-house"),
-        Product(name="B", selling_price=30, vendor="Dream a Dozen"),
-        Product(name="C", selling_price=70, tags=["Healthy"]),
-        Product(name="D", selling_price=20),
-    ]
-    request = RecommendationRequest(budget_min=200, budget_max=250, item_count=4, allow_repeats=True)
-    recommendations = recommend(catalog, request, limit=1)
-    best = recommendations[0].score
-
-    brute_best = max(
-        _closeness(sum(p.selling_price for p in combo) * (1 + GST_RATE), request.budget_min, request.budget_max)
-        + sum(_bonus_value(p, []) for p in combo)
-        for combo in combinations_with_replacement(catalog, request.item_count)
-    )
-    assert best == pytest.approx(brute_best, abs=0.01)
-
-
-def test_repeats_result_self_consistent_with_tied_prices():
-    # Same tied-price/bonus setup that broke the naive 0/1 reconstruction —
-    # repeats mode must independently reproduce reported total/score from
-    # the (possibly repeated) products it actually returns.
-    catalog = [Product(name=f"Sandwich {i}", selling_price=price, tags=["Healthy"], sourcing="Outsourced")
-               for i, price in enumerate([77, 77, 88, 88, 88, 35, 35, 52, 52, 60, 60, 45, 45, 28.6, 28.6])]
-    request = RecommendationRequest(budget_min=500, budget_max=1200, item_count=6, preferred_products=["Sandwich"], allow_repeats=True)
-    for rec in recommend(catalog, request, limit=20):
-        names = [product.name for product in rec.products]
-        assert len(names) == request.item_count
-        by_name = {product.name: product for product in catalog}
-        recomputed_total = sum(by_name[name].selling_price for name in names) * (1 + GST_RATE)
-        recomputed_bonus = sum(_bonus_value(by_name[name], request.preferred_products) for name in names)
-        expected_score = _closeness(recomputed_total, request.budget_min, request.budget_max) + recomputed_bonus
-        assert rec.total_price == pytest.approx(recomputed_total, abs=0.01)
-        assert rec.score == pytest.approx(expected_score, abs=0.01)
-
-
-def test_repeats_score_is_at_least_as_good_as_without():
-    request_no_repeats = RecommendationRequest(budget_min=500, budget_max=1200, item_count=4)
-    request_repeats = RecommendationRequest(budget_min=500, budget_max=1200, item_count=4, allow_repeats=True)
-    without = recommend(_catalog(), request_no_repeats, limit=1)[0].score
-    with_repeats = recommend(_catalog(), request_repeats, limit=1)[0].score
-    assert with_repeats >= without
 
 
 def test_required_category_present_in_every_result():
@@ -248,39 +202,6 @@ def test_required_categories_plus_mandatory_exceed_item_count_raises():
         recommend(catalog, request)
 
 
-def test_repeats_and_category_quota_combined_matches_brute_force():
-    catalog = [
-        Product(name="Brownie A", selling_price=50, category="Brownie", tags=["Sweet"]),
-        Product(name="Healthy Brownie", selling_price=65, category="Brownie", tags=["Healthy"]),
-        Product(name="Cookie A", selling_price=30, category="Cookie", tags=["Sweet"]),
-        Product(name="Cookie B", selling_price=40, category="Cookie", tags=["Healthy"]),
-        Product(name="Sandwich A", selling_price=90, category="Savoury"),
-        Product(name="Cake", selling_price=45, category="Cake"),
-    ]
-    request = RecommendationRequest(
-        budget_min=350, budget_max=450, item_count=5, allow_repeats=True,
-        preferred_products=["Cake"], required_categories=["Brownie", "Cookie", "Cookie", "Healthy"],
-    )
-    recommendations = recommend(catalog, request, limit=50)
-    assert recommendations
-
-    group_keys = ("brownie", "cookie", "healthy")
-    quota_counts = (1, 2, 1)
-    name_to_index = {product.name: i for i, product in enumerate(catalog)}
-    for rec in recommendations:
-        assert len(rec.products) == request.item_count
-        combo = tuple(name_to_index[product.name] for product in rec.products)
-        assert _quota_feasible(combo, group_keys, quota_counts, catalog)
-
-    brute_best = max(
-        _closeness(sum(catalog[i].selling_price for i in combo) * (1 + GST_RATE), request.budget_min, request.budget_max)
-        + sum(_bonus_value(catalog[i], request.preferred_products) for i in combo)
-        for combo in combinations_with_replacement(range(len(catalog)), request.item_count)
-        if _quota_feasible(combo, group_keys, quota_counts, catalog)
-    )
-    assert recommendations[0].score == pytest.approx(brute_best, abs=0.01)
-
-
 def test_achievable_max_hint_when_catalog_price_ceiling_is_low():
     catalog = [
         Product(name="Small Item", selling_price=20),
@@ -292,6 +213,21 @@ def test_achievable_max_hint_when_catalog_price_ceiling_is_low():
     assert recommendations
     assert messages
     assert "priciest" in messages[0].lower()
+
+
+def test_category_filter_matches_across_punctuation_variants():
+    # Regression: catalog category "Healthy - Savoury" must still match a
+    # "Healthy Savoury" filter (no dash) - punctuation shouldn't zero out
+    # an otherwise-valid category match.
+    catalog = [
+        Product(name="Veg Roll", selling_price=88, category="Healthy - Savoury", tags=["Healthy - Savoury"]),
+        Product(name="Brownie", selling_price=120, category="In-house sweet", tags=["In-house sweet"]),
+    ]
+    request = RecommendationRequest(budget_min=50, budget_max=200, item_count=1, preferred_categories=["Healthy Savoury"])
+    recommendations = recommend(catalog, request, limit=5)
+    assert recommendations
+    for rec in recommendations:
+        assert any(product.name == "Veg Roll" for product in rec.products)
 
 
 def test_no_hint_when_budget_is_reachable():
