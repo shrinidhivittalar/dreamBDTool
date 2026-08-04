@@ -10,6 +10,7 @@ try:
         _is_themed_or_customised,
         _matches,
         _resolve_mandatory,
+        _suggest_names,
         _unique_category_groups,
     )
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
         _is_themed_or_customised,
         _matches,
         _resolve_mandatory,
+        _suggest_names,
         _unique_category_groups,
     )
 
@@ -116,6 +118,13 @@ def build_candidate_context(products: list[Product], request: RecommendationRequ
         raise ValueError("Mandatory products and required categories exceed the requested item count.")
     for group in group_keys:
         if not any(_category_match(product, group) for product in pool):
+            available = sorted({group for product in pool for group in _unique_category_groups(product)})
+            suggestions = _suggest_names(group, available)
+            if suggestions:
+                raise ValueError(
+                    f"Required category '{group}' has no matching catalog items. "
+                    f"Did you mean: {', '.join(suggestions)}?"
+                )
             raise ValueError(f"Required category '{group}' has no matching catalog items.")
 
     return CandidateContext(

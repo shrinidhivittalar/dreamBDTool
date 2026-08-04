@@ -1,3 +1,4 @@
+import difflib
 import re
 
 try:
@@ -117,6 +118,33 @@ def _closeness(total: float, budget_min: float, budget_max: float) -> float:
     return 95 - 40 * (total - budget_max) / budget_max
 
 
+def _suggest_names(wanted: str, names: list[str], limit: int = 3, cutoff: float = 0.6) -> list[str]:
+    """Suggest catalog names close to `wanted`, matching on individual words
+    too (not just whole-string similarity) since catalog names are often
+    multi-word ("Fudgy Walnut brownie") while a typo'd request is usually
+    just one misspelled word ("Brwonie").
+    """
+    whole = difflib.get_close_matches(wanted, names, n=limit, cutoff=cutoff)
+    if whole:
+        return whole
+    scored: list[tuple[float, str]] = []
+    for name in names:
+        best = max(
+            (difflib.SequenceMatcher(None, wanted.lower(), word.lower()).ratio() for word in name.split()),
+            default=0.0,
+        )
+        if best >= cutoff:
+            scored.append((best, name))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    seen: list[str] = []
+    for _, name in scored:
+        if name not in seen:
+            seen.append(name)
+        if len(seen) == limit:
+            break
+    return seen
+
+
 def _resolve_mandatory(candidates: list[Product], requested: list[str]) -> set[int]:
     """Resolve each mandatory product name to exactly one catalog index.
 
@@ -132,6 +160,14 @@ def _resolve_mandatory(candidates: list[Product], requested: list[str]) -> set[i
         exact = [i for i, product in enumerate(candidates) if product.name.strip().lower() == needle]
         matches = exact if exact else [i for i, product in enumerate(candidates) if _matches(product.name, wanted)]
         if len(matches) != 1:
+            if not matches:
+                names = [product.name for product in candidates]
+                suggestions = _suggest_names(wanted, names)
+                if suggestions:
+                    raise ValueError(
+                        f"Mandatory product '{wanted}' did not match any catalog item. "
+                        f"Did you mean: {', '.join(suggestions)}?"
+                    )
             raise ValueError(f"Mandatory product '{wanted}' must match exactly one catalog item (found {len(matches)}).")
         resolved.add(matches[0])
     return resolved
