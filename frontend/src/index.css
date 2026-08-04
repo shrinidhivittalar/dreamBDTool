@@ -57,6 +57,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .wizard-next:hover { background: #a71e4f; transform: translateY(-1px); } .wizard-next:disabled { cursor: wait; opacity: .6; transform: none; }
 .wizard-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; } .wizard-actions .wizard-next { margin-top: 0; }
 .wizard-back { border: 0; background: transparent; color: #766b64; font-size: 13px; cursor: pointer; }
+.wizard-back-top { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #e4dcd4; border-radius: 999px; background: #fffdfa; color: #514844; font-size: 14px; cursor: pointer; transition: all .15s; }
+.wizard-back-top:hover { border-color: #bd285c; color: #a51f50; }
 .field-error { margin-top: 7px; font-size: 11px; font-weight: 700; color: #c0264f; }
 .field-note { margin-top: 7px; font-size: 11px; font-weight: 600; color: #a5690a; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; cursor: pointer; user-select: none; font-size: 12px; color: #514844; }

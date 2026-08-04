@@ -50,9 +50,15 @@ export function RecommendationCard({ recommendation, index, mandatoryProducts, r
           )
         })}
       </div>
-      <div className="bg-[#fcf8f3] px-4 py-2.5">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-[#9b8d84]">Total price</div>
-        <div className="serif mt-0.5 text-lg text-[#302a27]">{money(recommendation.total_price)}</div>
+      <div className="flex items-center justify-between gap-3 bg-[#fcf8f3] px-4 py-2.5">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#9b8d84]">Recommended price</div>
+          <div className="serif mt-0.5 text-lg text-[#302a27]">{money(recommendation.dad_selling_price)}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[#9b8d84]">Floor price</div>
+          <div className="serif mt-0.5 text-lg text-[#a5690a]">{money(recommendation.rock_bottom_price)}</div>
+        </div>
       </div>
     </article>
   )

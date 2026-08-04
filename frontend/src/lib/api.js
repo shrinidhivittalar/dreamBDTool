@@ -31,3 +31,35 @@ export async function fetchRecommendations(payload) {
   }
   return response.json()
 }
+
+export async function exportRecommendations(payload, format, layout = 'summary') {
+  const response = await fetch(`${API}/api/recommendations/export/${format}?layout=${layout}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error(`Export failed (${response.status})`)
+  return response.blob()
+}
+
+export async function fetchProductStatus() {
+  const response = await fetch(`${API}/api/products/status`)
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  return response.json()
+}
+
+export async function refreshProducts() {
+  const response = await fetch(`${API}/api/products/refresh`, { method: 'POST' })
+  if (!response.ok) throw new Error(`Refresh failed (${response.status})`)
+  return response.json()
+}
+
+export async function uploadProducts(file) {
+  const response = await fetch(`${API}/api/products/upload`, {
+    method: 'POST',
+    headers: { 'x-filename': file.name },
+    body: await file.arrayBuffer(),
+  })
+  if (!response.ok) throw new Error(`Upload failed (${response.status})`)
+  return response.json()
+}
