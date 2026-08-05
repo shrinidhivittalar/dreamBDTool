@@ -3,10 +3,8 @@ export function tagsFor(form, key) {
 }
 
 export function recommendationPayload(form) {
-  const { no_item_count_preference, ...rest } = form
   return {
-    ...rest,
-    item_count: no_item_count_preference ? null : form.item_count,
+    ...form,
     mandatory_products: tagsFor(form, 'mandatory_products'),
     preferred_products: tagsFor(form, 'preferred_products'),
     excluded_products: tagsFor(form, 'excluded_products'),

@@ -7,8 +7,10 @@ import pandas as pd
 
 try:
     from .models import Product
+    from .recommender_config import CUSTOMIZATION_ELIGIBLE_PRODUCT_NAMES, THEMED_CUSTOMISED_CATEGORY_MARKERS
 except ImportError:
     from models import Product
+    from recommender_config import CUSTOMIZATION_ELIGIBLE_PRODUCT_NAMES, THEMED_CUSTOMISED_CATEGORY_MARKERS
 
 
 COLUMN_ALIASES = {
@@ -19,7 +21,16 @@ COLUMN_ALIASES = {
     "vendor": ["Vendor"],
     "tags": ["Tags", "Tag"],
     "sourcing": ["In-house / Outsourced", "Sourcing"],
+    # The source sheet leaves these two columns unheadered - pandas names
+    # them positionally ("Unnamed: 5"/"Unnamed: 6"). Named aliases are kept
+    # first so a future sheet with real headers is picked up automatically.
+    "packaging_note": ["Packaging", "Packaging Note", "Unnamed: 5"],
+    "packaging_addon_cost": ["Packaging Cost", "Add-on Cost", "Unnamed: 6"],
 }
+
+
+def _normalized_name(value: str) -> str:
+    return " ".join(value.strip().lower().split())
 
 
 @dataclass(frozen=True)
@@ -118,15 +129,34 @@ def load_catalog(path: str | Path, source_name: str | None = None) -> CatalogLoa
             if rock_bottom is not None and rock_bottom > price:
                 rock_bottom = None
 
+        packaging_note = _text(row[columns["packaging_note"]]) if columns["packaging_note"] else ""
+        packaging_addon_cost = None
+        if columns["packaging_addon_cost"] and not pd.isna(row[columns["packaging_addon_cost"]]):
+            try:
+                packaging_addon_cost = float(row[columns["packaging_addon_cost"]])
+            except (TypeError, ValueError):
+                pass
+
+        category_text = _text(row[columns["category"]]) if columns["category"] else ""
+        is_customization_addon = any(
+            marker in _normalized_name(category_text) or any(marker in tag.lower() for tag in tags)
+            for marker in THEMED_CUSTOMISED_CATEGORY_MARKERS
+        )
+        customization_eligible = _normalized_name(name) in CUSTOMIZATION_ELIGIBLE_PRODUCT_NAMES
+
         seen_names.add(needle)
         products.append(Product(
             name=name,
             selling_price=price,
             rock_bottom_price=rock_bottom,
-            category=_text(row[columns["category"]]) if columns["category"] else "",
+            category=category_text,
             vendor=_text(row[columns["vendor"]]) if columns["vendor"] else "",
             tags=tags,
             sourcing=_text(row[columns["sourcing"]]) if columns["sourcing"] else "",
+            packaging_note=packaging_note,
+            packaging_addon_cost=packaging_addon_cost,
+            customization_eligible=customization_eligible,
+            is_customization_addon=is_customization_addon,
         ))
 
     report = CatalogValidationReport(

@@ -28,9 +28,10 @@ def score_combination(
     bonus_sum: float,
     identities: Counter,
     request: RecommendationRequest,
+    customization_addon: Product | None = None,
 ) -> ScoredCombination:
     products = mandatory_items + pool_items
-    breakdown = pricing_engine.breakdown(products, request)
+    breakdown = pricing_engine.breakdown(products, request, customization_addon)
     total = breakdown.total_price
     fixed_bonus = sum(_bonus_value(product, request.preferred_products) for product in mandatory_items)
     score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus + bonus_sum
@@ -52,8 +53,12 @@ def recommendation_from_score(scored: ScoredCombination, request: Recommendation
     )
 
 
-def mandatory_only_recommendation(mandatory_items: list[Product], request: RecommendationRequest) -> Recommendation:
-    breakdown = pricing_engine.breakdown(mandatory_items, request)
+def mandatory_only_recommendation(
+    mandatory_items: list[Product],
+    request: RecommendationRequest,
+    customization_addon: Product | None = None,
+) -> Recommendation:
+    breakdown = pricing_engine.breakdown(mandatory_items, request, customization_addon)
     total = breakdown.total_price
     fixed_bonus = sum(_bonus_value(product, request.preferred_products) for product in mandatory_items)
     score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus

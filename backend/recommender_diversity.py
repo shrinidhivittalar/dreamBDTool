@@ -2,10 +2,10 @@ from collections import Counter
 
 try:
     from .models import Product
-    from .recommender_config import OVERLAP_LEVELS, QUALITY_FLOOR_RATIO
+    from .recommender_config import MAX_PRODUCT_REPEAT, OVERLAP_LEVELS, QUALITY_FLOOR_RATIO
 except ImportError:
     from models import Product
-    from recommender_config import OVERLAP_LEVELS, QUALITY_FLOOR_RATIO
+    from recommender_config import MAX_PRODUCT_REPEAT, OVERLAP_LEVELS, QUALITY_FLOOR_RATIO
 
 
 def _pick_within_threshold(
@@ -13,22 +13,31 @@ def _pick_within_threshold(
     k: int,
     limit: int,
     threshold: float | None = None,
+    max_repeat: int | None = None,
 ) -> tuple[list[tuple[float, float, list[Product]]], list[Counter]]:
     """Greedily take candidates (already score-sorted) up to `limit`,
     skipping any whose overlap with an already-picked combo exceeds
-    `threshold`. `threshold=None` means no overlap constraint at all -
-    just take the next-best distinct combos.
+    `threshold`, and (when `max_repeat` is set) skipping any that would push
+    a single product's appearance count across the picked set past
+    `max_repeat`. `threshold=None` means no overlap-ratio constraint;
+    `max_repeat=None` means no per-product frequency cap - either or both
+    can be relaxed by the caller to guarantee `limit` results.
     """
     picked: list[tuple[float, float, list[Product]]] = []
     picked_ids: list[Counter] = []
+    product_frequency: Counter = Counter()
     for score, total, combo, ids in candidates:
         if ids in picked_ids:
             continue
-        if threshold is None or not k or all(sum((ids & other).values()) / k <= threshold for other in picked_ids):
-            picked.append((score, total, combo))
-            picked_ids.append(ids)
-            if len(picked) == limit:
-                break
+        if threshold is not None and k and any(sum((ids & other).values()) / k > threshold for other in picked_ids):
+            continue
+        if max_repeat is not None and any(product_frequency[key] + count > max_repeat for key, count in ids.items()):
+            continue
+        picked.append((score, total, combo))
+        picked_ids.append(ids)
+        product_frequency.update(ids)
+        if len(picked) == limit:
+            break
     return picked, picked_ids
 
 
@@ -41,11 +50,16 @@ def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k
        best score are eligible at all. Otherwise, hunting for a distinct
        option could drag in something dramatically worse just because it
        doesn't overlap with the good ones already picked.
-    2. Graduated overlap - within that eligible set, try the strictest
-       overlap allowance first (OVERLAP_LEVELS) and only loosen it if that
-       can't fill every slot, so repeats across options stay as rare as
-       the catalog allows rather than jumping straight to "ignore overlap
-       entirely" the moment the strict threshold falls short.
+    2. Graduated overlap + a per-product repeat cap (MAX_PRODUCT_REPEAT) -
+       within that eligible set, try the strictest overlap allowance first
+       (OVERLAP_LEVELS) while capping how many of the `limit` options any
+       single product can appear in, so five options aren't just
+       non-identical but actually spread across different products/
+       categories. Both constraints only loosen (repeat cap first, then
+       overlap ratio) if the stricter combination can't fill every slot,
+       so real variety stays as high as the catalog allows rather than
+       jumping straight to "ignore diversity entirely" the moment the
+       strictest tier falls short.
 
     Only if the eligible set itself is smaller than `limit` do we reach
     past the quality floor into the full candidate list, to guarantee up
@@ -63,12 +77,17 @@ def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k
     picked: list[tuple[float, float, list[Product]]] = []
     picked_ids: list[Counter] = []
     for threshold in OVERLAP_LEVELS:
-        picked, picked_ids = _pick_within_threshold(eligible, k, limit, threshold)
+        picked, picked_ids = _pick_within_threshold(eligible, k, limit, threshold, MAX_PRODUCT_REPEAT)
         if len(picked) == limit:
             break
     if len(picked) < limit:
+        # Keep the repeat cap but drop the overlap-ratio constraint.
+        picked, picked_ids = _pick_within_threshold(eligible, k, limit, None, MAX_PRODUCT_REPEAT)
+    if len(picked) < limit:
+        # Drop the repeat cap too, still within the quality floor.
         picked, picked_ids = _pick_within_threshold(eligible, k, limit)
     if len(picked) < limit:
+        # Last resort: guarantee `limit` results even past the quality floor.
         picked, picked_ids = _pick_within_threshold(scored, k, limit)
 
     picked.sort(key=lambda entry: entry[0], reverse=True)

@@ -4,7 +4,7 @@ try:
     from .models import Product, Recommendation, RecommendationRequest
     from .pricing import pricing_engine
     from .recommender_config import MAX_ITEM_COUNT
-    from .recommender_constraints import active_filter_descriptions, build_candidate_context
+    from .recommender_constraints import active_filter_descriptions, build_candidate_context, find_customization_addon
     from .recommender_diversity import _select_diverse
     from .recommender_ranking import (
         ScoredCombination,
@@ -13,13 +13,13 @@ try:
         recommendation_from_score,
         score_combination,
     )
-    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness
+    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _unique_category_groups
     from .recommender_search import _search_pool, _search_unique_pool, generate_combinations
 except ImportError:
     from models import Product, Recommendation, RecommendationRequest
     from pricing import pricing_engine
     from recommender_config import MAX_ITEM_COUNT
-    from recommender_constraints import active_filter_descriptions, build_candidate_context
+    from recommender_constraints import active_filter_descriptions, build_candidate_context, find_customization_addon
     from recommender_diversity import _select_diverse
     from recommender_ranking import (
         ScoredCombination,
@@ -28,8 +28,41 @@ except ImportError:
         recommendation_from_score,
         score_combination,
     )
-    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness
+    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _unique_category_groups
     from recommender_search import _search_pool, _search_unique_pool, generate_combinations
+
+
+def _sibling_candidates(
+    pool: list[Product],
+    item: Product,
+    excluded_keys: set[str],
+    group_keys: tuple[str, ...],
+) -> list[Product]:
+    """Other pool products that are a budget/category-neutral swap for
+    `item` - same price bucket (so scoring/budget impact is unchanged) and
+    the same category footprint (so unique-category and required-category
+    quotas stay satisfied). The DP search's tie-breaking keeps only one
+    canonical item per (price, category) state, silently discarding true
+    alternatives like this - this reintroduces them so the diversity
+    selector has real variety to choose from instead of always seeing the
+    same single "winner" for every tied slot (e.g. every FMCG item costs
+    the same, so only one would ever appear without this).
+    """
+    item_groups = _unique_category_groups(item)
+    item_bucket = pricing_engine.price_bucket(item)
+    item_required = tuple(_category_match(item, group) for group in group_keys)
+    siblings = []
+    for candidate in pool:
+        if _base_product_key(candidate) in excluded_keys:
+            continue
+        if _unique_category_groups(candidate) != item_groups:
+            continue
+        if pricing_engine.price_bucket(candidate) != item_bucket:
+            continue
+        if tuple(_category_match(candidate, group) for group in group_keys) != item_required:
+            continue
+        siblings.append(candidate)
+    return siblings
 
 
 def _too_few_candidates_message(pool_size: int, k: int, request: RecommendationRequest) -> str:
@@ -48,6 +81,7 @@ def _too_few_candidates_message(pool_size: int, k: int, request: RecommendationR
 def _generate_scored_combinations(
     context,
     request: RecommendationRequest,
+    customization_addon: Product | None = None,
 ) -> list[ScoredCombination]:
     scored: list[ScoredCombination] = []
     generated = generate_combinations(
@@ -72,22 +106,51 @@ def _generate_scored_combinations(
             enforce_unique_categories=False,
         )
     mandatory_keys = {_base_product_key(product) for product in context.mandatory_items}
-    for bonus_sum, item_indices in generated:
-        pool_items = [context.pool[i] for i in item_indices]
+    seen_key_sets: set[frozenset[str]] = set()
+
+    def add_combo(pool_items: list[Product], bonus_sum: float) -> None:
         pool_keys = [_base_product_key(product) for product in pool_items]
         # Skip boxes that would carry two size/variant SKUs of the same
         # flavor (e.g. a "mini" and a full-size version of one brownie).
         if len(set(pool_keys)) != len(pool_keys) or mandatory_keys & set(pool_keys):
-            continue
+            return
+        key_set = frozenset(pool_keys) | mandatory_keys
+        if key_set in seen_key_sets:
+            return
+        seen_key_sets.add(key_set)
         scored.append(
             score_combination(
                 context.mandatory_items,
                 pool_items,
                 bonus_sum,
-                Counter(item_indices),
+                # Keyed on actual product identity (not pool position) so
+                # overlap comparisons stay meaningful even across the
+                # different pools _recommend_any_count builds per item size.
+                Counter(pool_keys),
                 request,
+                customization_addon,
             )
         )
+
+    combos = [([context.pool[i] for i in item_indices], bonus_sum) for bonus_sum, item_indices in generated]
+    for pool_items, bonus_sum in combos:
+        add_combo(pool_items, bonus_sum)
+
+    # Sibling substitution: for each generated combo, try swapping each item
+    # for a same-price-bucket, same-category alternative the DP's tie-
+    # breaking discarded (see _sibling_candidates). Bounded by what the DP
+    # already generated, so this stays proportional to search output, not
+    # the whole catalog.
+    for pool_items, bonus_sum in combos:
+        existing_keys = {_base_product_key(product) for product in pool_items} | mandatory_keys
+        for position, item in enumerate(pool_items):
+            siblings = _sibling_candidates(context.pool, item, existing_keys, context.group_keys)
+            for sibling in siblings:
+                variant = list(pool_items)
+                variant[position] = sibling
+                variant_bonus = bonus_sum - _bonus_value(item, request.preferred_products) + _bonus_value(sibling, request.preferred_products)
+                add_combo(variant, variant_bonus)
+
     scored.sort(key=lambda entry: entry.score, reverse=True)
     return scored
 
@@ -98,6 +161,7 @@ def _recommend_fixed_count(
     limit: int,
     messages: list[str] | None,
 ) -> list[Recommendation]:
+    customization_addon = find_customization_addon(products)
     context = build_candidate_context(products, request)
     if context.k > len(context.pool):
         if messages is not None:
@@ -105,9 +169,9 @@ def _recommend_fixed_count(
         return []
 
     if context.k == 0:
-        return [mandatory_only_recommendation(context.mandatory_items, request)][:limit]
+        return [mandatory_only_recommendation(context.mandatory_items, request, customization_addon)][:limit]
 
-    scored = _generate_scored_combinations(context, request)
+    scored = _generate_scored_combinations(context, request, customization_addon)
     if messages is not None:
         append_budget_hint(scored, request, messages)
 
@@ -123,7 +187,7 @@ def _recommend_fixed_count(
                 total=total,
                 products=combo,
                 identities=Counter(),
-                breakdown=pricing_engine.breakdown(combo, request),
+                breakdown=pricing_engine.breakdown(combo, request, customization_addon),
             ),
             request,
         )
@@ -141,6 +205,7 @@ def _recommend_any_count(
     keep whichever combinations fit the budget and score best, regardless
     of how many items they contain.
     """
+    customization_addon = find_customization_addon(products)
     scored: list[ScoredCombination] = []
     mandatory_only: ScoredCombination | None = None
     considered_any_size = False
@@ -156,9 +221,11 @@ def _recommend_any_count(
         considered_any_size = True
         if context.k == 0:
             if mandatory_only is None:
-                mandatory_only = score_combination(context.mandatory_items, [], 0, Counter(), sized_request)
+                mandatory_only = score_combination(
+                    context.mandatory_items, [], 0, Counter(), sized_request, customization_addon
+                )
             continue
-        scored.extend(_generate_scored_combinations(context, sized_request))
+        scored.extend(_generate_scored_combinations(context, sized_request, customization_addon))
 
     if not considered_any_size:
         if messages is not None:
@@ -183,7 +250,7 @@ def _recommend_any_count(
                 total=total,
                 products=combo,
                 identities=Counter(),
-                breakdown=pricing_engine.breakdown(combo, request),
+                breakdown=pricing_engine.breakdown(combo, request, customization_addon),
             ),
             request,
         )

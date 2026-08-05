@@ -13,8 +13,7 @@ export const MAX_ITEM_COUNT = 10
 export const initialForm = {
   budget_min: 100,
   budget_max: 250,
-  item_count: 4,
-  no_item_count_preference: false,
+  item_count: 5,
   preferred_categories: [],
   mandatory_products: '',
   preferred_products: '',

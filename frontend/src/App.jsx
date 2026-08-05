@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BriefWizard } from './components/BriefWizard'
 import { ResultsPanel } from './components/ResultsPanel'
 import { categories, initialForm } from './config/brief'
-import { exportRecommendations, fetchProducts, fetchRecommendations, refreshProducts, uploadProducts } from './lib/api'
+import { exportRecommendations, fetchProducts, fetchRecommendations, refreshProducts, repriceRecommendation, uploadProducts } from './lib/api'
 import { recommendationPayload, tagsFor } from './lib/briefForm'
 
 export function App() {
@@ -17,6 +17,7 @@ export function App() {
   const [lastPayload, setLastPayload] = useState(null)
   const [exporting, setExporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [repricingIndices, setRepricingIndices] = useState(() => new Set())
 
   useEffect(() => {
     fetchProducts()
@@ -31,7 +32,7 @@ export function App() {
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const toggleCategory = item => set('preferred_categories', form.preferred_categories.includes(item) ? form.preferred_categories.filter(value => value !== item) : [...form.preferred_categories, item])
   const budgetInvalid = form.budget_min > form.budget_max
-  const maxPossibleTotal = catalogRange && !form.no_item_count_preference ? form.item_count * catalogRange.max : null
+  const maxPossibleTotal = catalogRange ? form.item_count * catalogRange.max : null
   const budgetTooHighForItems = !budgetInvalid && maxPossibleTotal !== null && maxPossibleTotal < form.budget_min
   const visibleCategories = form.sweet_preference === 'sweet_only'
     ? categories.filter(item => item.toLowerCase().includes('sweet'))
@@ -50,10 +51,12 @@ export function App() {
   async function generate() {
     setLoading(true)
     setMessage('')
-    const payload = recommendationPayload(form)
+    const payload = { ...recommendationPayload(form), customize_products: [] }
     try {
       const data = await fetchRecommendations(payload)
-      setRecommendations(data.recommendations)
+      // Each card tracks its own customization toggles locally - not part
+      // of the shared brief, so a toggle on one card can't affect another.
+      setRecommendations(data.recommendations.map(recommendation => ({ ...recommendation, customizeProducts: [] })))
       setCatalogSize(data.catalog_size)
       setMessage(data.message || '')
       setLastBrief({
@@ -66,6 +69,39 @@ export function App() {
       setRecommendations([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Toggling a cupcake's customization re-prices only that one option's
+  // fixed product list via /api/recommendations/reprice - it must NOT
+  // re-run the search, so the other options and this option's own product
+  // list stay exactly as generated.
+  async function toggleCustomization(optionIndex, productName) {
+    const target = recommendations[optionIndex]
+    if (!target) return
+    const currentList = target.customizeProducts || []
+    const nextList = currentList.includes(productName)
+      ? currentList.filter(name => name !== productName)
+      : [...currentList, productName]
+
+    setRepricingIndices(current => new Set(current).add(optionIndex))
+    try {
+      const pricing = await repriceRecommendation({
+        products: target.products,
+        customize_products: nextList,
+        budget_max: form.budget_max,
+      })
+      setRecommendations(current => current.map((recommendation, index) =>
+        index === optionIndex ? { ...recommendation, ...pricing, customizeProducts: nextList } : recommendation
+      ))
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setRepricingIndices(current => {
+        const next = new Set(current)
+        next.delete(optionIndex)
+        return next
+      })
     }
   }
 
@@ -183,6 +219,8 @@ export function App() {
             recommendations={recommendations}
             onExport={exportCurrent}
             exporting={exporting}
+            onToggleCustomization={toggleCustomization}
+            repricingIndices={repricingIndices}
           />
         </div>
       </main>

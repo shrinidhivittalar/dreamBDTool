@@ -39,11 +39,14 @@ def test_business_rules_savory_packaging_adds_ketchup():
 
 def test_recommendation_output_includes_business_rule_prices_and_packaging():
     catalog = [Product(name="Samosa", selling_price=40, rock_bottom_price=30, category="Savoury")]
-    request = RecommendationRequest(budget_min=30, budget_max=60, item_count=1, mandatory_products=["Samosa"])
+    request = RecommendationRequest(budget_min=30, budget_max=80, item_count=1, mandatory_products=["Samosa"])
 
     recommendation = recommend(catalog, request)[0]
 
-    assert recommendation.total_price == pytest.approx(40)
+    # A savory box always carries the flat ₹20 packaging add-on (Ketchup
+    # sachet included) on top of the item total - see PACKAGING_SAVORY_COST.
+    assert recommendation.packaging_cost == pytest.approx(20)
+    assert recommendation.total_price == pytest.approx(60)
     assert recommendation.dad_selling_price == pytest.approx(40)
     assert recommendation.rock_bottom_price == pytest.approx(30)
     assert [item.name for item in recommendation.packaging] == ["Box", "Tissue", "Ketchup sachet"]

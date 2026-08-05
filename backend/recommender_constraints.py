@@ -50,9 +50,18 @@ def active_filter_descriptions(request: RecommendationRequest) -> list[str]:
     return active_filters
 
 
+def find_customization_addon(products: list[Product]) -> Product | None:
+    return next((product for product in products if product.is_customization_addon), None)
+
+
 def apply_catalog_filters(products: list[Product], request: RecommendationRequest) -> list[Product]:
+    # Customization add-ons (the White Chocolate Disc) are never a standalone
+    # box item, under any setting - not include_themed_customised, not even
+    # an explicit mandatory_products request. They only apply as a surcharge
+    # via request.customize_products, handled in pricing.py.
+    candidates = [product for product in products if not product.is_customization_addon]
     candidates = [
-        product for product in products
+        product for product in candidates
         if not any(_matches(product.name, excluded) for excluded in request.excluded_products)
     ]
     if not request.include_themed_customised:

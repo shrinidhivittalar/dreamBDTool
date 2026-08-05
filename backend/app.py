@@ -9,15 +9,35 @@ try:
     from .data_provider import data_provider
     from .exporter import content_type_for, export_recommendations, filename_for
     from .intent_parser import parse_intent_response
-    from .models import IntentParseRequest, IntentParseResponse, Product, RecommendationRequest, RecommendationResponse
+    from .models import (
+        IntentParseRequest,
+        IntentParseResponse,
+        Product,
+        RecommendationRequest,
+        RecommendationResponse,
+        RepriceRequest,
+        RepriceResponse,
+    )
+    from .pricing import pricing_engine
     from .recommender import recommend
+    from .recommender_constraints import find_customization_addon
     from .validator import blocking_errors, validate_recommendations
 except ImportError:
     from data_provider import data_provider
     from exporter import content_type_for, export_recommendations, filename_for
     from intent_parser import parse_intent_response
-    from models import IntentParseRequest, IntentParseResponse, Product, RecommendationRequest, RecommendationResponse
+    from models import (
+        IntentParseRequest,
+        IntentParseResponse,
+        Product,
+        RecommendationRequest,
+        RecommendationResponse,
+        RepriceRequest,
+        RepriceResponse,
+    )
+    from pricing import pricing_engine
     from recommender import recommend
+    from recommender_constraints import find_customization_addon
     from validator import blocking_errors, validate_recommendations
 
 
@@ -164,6 +184,36 @@ def create_recommendations(request: RecommendationRequest) -> RecommendationResp
     else:
         message = None
     return _validated_response(recommendations, request, len(products), message)
+
+
+@app.post("/api/recommendations/reprice", response_model=RepriceResponse)
+def reprice_recommendation(request: RepriceRequest) -> RepriceResponse:
+    """Re-price one option's fixed product list only - no search, no
+    combination generation. Used for toggling the disc customization on a
+    single already-generated card without disturbing the other cards."""
+    customization_addon = find_customization_addon(data_provider.get_products())
+    pricing_request = RecommendationRequest(
+        budget_min=0.01,
+        budget_max=request.budget_max or 10**9,
+        customize_products=request.customize_products,
+    )
+    breakdown = pricing_engine.breakdown(request.products, pricing_request, customization_addon)
+    total = round(breakdown.total_price, 2)
+    remaining_budget = None
+    over_budget = False
+    if request.budget_max is not None:
+        remaining_budget = round(request.budget_max - total, 2)
+        over_budget = total > request.budget_max
+    return RepriceResponse(
+        dad_selling_price=round(breakdown.dad_selling_price, 2),
+        rock_bottom_price=round(breakdown.rock_bottom_price, 2),
+        customization_surcharge=round(breakdown.customization_surcharge, 2),
+        packaging_cost=round(breakdown.packaging_cost, 2),
+        discount=round(breakdown.discount, 2),
+        total_price=total,
+        remaining_budget=remaining_budget,
+        over_budget=over_budget,
+    )
 
 
 @app.post("/api/recommendations/export/{export_format}")
