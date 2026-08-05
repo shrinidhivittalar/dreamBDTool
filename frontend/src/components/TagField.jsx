@@ -16,6 +16,17 @@ export function TagField({ tags, placeholder, onAdd, onRemove }) {
             e.currentTarget.value = ''
           }
         }}
+        onBlur={e => {
+          // Commits whatever's still sitting in the box uncommitted when
+          // focus leaves it (e.g. clicking straight to "Generate
+          // recommendations" without pressing Enter/comma first) - otherwise
+          // that text is silently dropped and the rule it represents never
+          // reaches the request at all.
+          if (e.currentTarget.value.trim()) {
+            onAdd(e.currentTarget.value)
+            e.currentTarget.value = ''
+          }
+        }}
       />
     </div>
   )

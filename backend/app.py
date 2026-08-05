@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -45,11 +46,49 @@ def _auto_refresh_enabled() -> bool:
     return os.environ.get("PRODUCT_AUTO_REFRESH", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _warning_group_key(issue) -> tuple[str, str]:
+    # Groups warnings that are "the same problem, different option" so they
+    # collapse into one summary line instead of one line per option. Codes
+    # whose message embeds a specific value (e.g. which category is
+    # missing) are keyed on that value, since a missing-Savoury warning and
+    # a missing-FMCG warning are distinct problems even though they share a
+    # code; codes without such a value (e.g. budget_exceeded, where the
+    # exact overage differs per option) are keyed on the code alone.
+    if issue.code == "preferred_category_missing":
+        match = re.search(r"'([^']+)'", issue.message)
+        return (issue.code, match.group(1) if match else issue.message)
+    return (issue.code, "")
+
+
+def _humanize_warning(code: str, key: str, affected_options: int) -> str:
+    # Validator messages are written for developers reading validation_issues
+    # (one entry per option, quoted field names, semicolon-joined) - a BD
+    # user reading the top-of-page summary under time pressure needs a
+    # single plain-English line instead, e.g. "Some options don't include a
+    # Savoury item you preferred." rather than
+    # "Preferred category 'Savoury' is not represented."
+    if code == "preferred_category_missing":
+        return f"Some options don't include a {key} item you preferred."
+    if code == "budget_exceeded":
+        subject = "One option goes" if affected_options == 1 else f"{affected_options} options go"
+        return f"{subject} over your budget."
+    return key
+
+
 def _validation_message(base_message: str | None, issues) -> str | None:
     warnings = [issue for issue in issues if issue.severity == "warning"]
     if not warnings:
         return base_message
-    warning_text = "; ".join(issue.message for issue in warnings[:3])
+    grouped: dict[tuple[str, str], set[int | None]] = {}
+    order: list[tuple[str, str]] = []
+    for issue in warnings:
+        group_key = _warning_group_key(issue)
+        if group_key not in grouped:
+            order.append(group_key)
+            grouped[group_key] = set()
+        grouped[group_key].add(issue.option_index)
+    summary_lines = [_humanize_warning(code, key, len(grouped[(code, key)])) for code, key in order][:3]
+    warning_text = " ".join(summary_lines)
     return f"{base_message} {warning_text}" if base_message else warning_text
 
 
