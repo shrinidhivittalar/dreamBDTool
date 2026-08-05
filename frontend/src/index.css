@@ -75,6 +75,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .tag-input > input { min-width: 110px; flex: 1; border: 0; outline: 0; background: transparent; padding: 3px; }
 .tag { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; background: #fbedf1; padding: 5px 8px 5px 10px; color: #a51f50; font-size: 12px; font-weight: 600; }
 .tag button { border: 0; background: transparent; color: #b32758; cursor: pointer; line-height: 1; }
+.must-mode-toggle { border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
+.must-mode-must { background: #bd285c; color: #fff; }
+.must-mode-preferred { background: #fff; border: 1px solid #e3a9bd; color: #a51f50; }
 .recap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 18px; }
 .recap-label { color: #9b8f87; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin-right: 3px; }
 .recap-chip { border: 1px solid #eee5dd; border-radius: 999px; background: #fcf8f3; color: #766b64; padding: 4px 10px; font-size: 11px; font-weight: 600; }

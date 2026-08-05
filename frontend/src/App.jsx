@@ -14,6 +14,7 @@ export function App() {
   const [catalogSize, setCatalogSize] = useState(0)
   const [lastBrief, setLastBrief] = useState(null)
   const [catalogRange, setCatalogRange] = useState(null)
+  const [productNames, setProductNames] = useState([])
   const [lastPayload, setLastPayload] = useState(null)
   const [exporting, setExporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -25,6 +26,7 @@ export function App() {
         if (!products.length) return
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
+        setProductNames(products.map(product => product.name))
       })
       .catch(() => {})
   }, [])
@@ -41,17 +43,22 @@ export function App() {
       : categories
   const addTag = (key, value) => set(key, [...new Set([...tagsFor(form, key), value.trim()])].filter(Boolean).join(', '))
   const removeTag = (key, tag) => set(key, tagsFor(form, key).filter(value => value !== tag).join(', '))
-  const advancedCount = [
-    tagsFor(form, 'required_categories').length > 0,
-    tagsFor(form, 'preferred_products').length > 0,
-    tagsFor(form, 'excluded_products').length > 0,
-    form.include_themed_customised,
-  ].filter(Boolean).length
+  const catalogNames = { productNames, categoryNames: categories }
+  const addMustInclude = value => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    if (form.must_include.some(entry => entry.value.toLowerCase() === trimmed.toLowerCase())) return
+    set('must_include', [...form.must_include, { value: trimmed, mode: 'must' }])
+  }
+  const removeMustInclude = index => set('must_include', form.must_include.filter((_, i) => i !== index))
+  const toggleMustIncludeMode = index => set('must_include', form.must_include.map((entry, i) =>
+    i === index ? { ...entry, mode: entry.mode === 'preferred' ? 'must' : 'preferred' } : entry
+  ))
 
   async function generate() {
     setLoading(true)
     setMessage('')
-    const payload = { ...recommendationPayload(form), customize_products: [] }
+    const payload = { ...recommendationPayload(form, catalogNames), customize_products: [] }
     try {
       const data = await fetchRecommendations(payload)
       // Each card tracks its own customization toggles locally - not part
@@ -131,6 +138,7 @@ export function App() {
       if (products.length) {
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
+        setProductNames(products.map(product => product.name))
       }
     } catch (error) {
       setMessage(error.message)
@@ -149,6 +157,7 @@ export function App() {
       if (products.length) {
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
+        setProductNames(products.map(product => product.name))
       }
     } catch (error) {
       setMessage(error.message)
@@ -197,17 +206,19 @@ export function App() {
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
           <BriefWizard
-            advancedCount={advancedCount}
             budgetInvalid={budgetInvalid}
             budgetTooHighForItems={budgetTooHighForItems}
             catalogRange={catalogRange}
             form={form}
             loading={loading}
+            onAddMustInclude={addMustInclude}
             onAddTag={addTag}
             onGenerate={generate}
+            onRemoveMustInclude={removeMustInclude}
             onRemoveTag={removeTag}
             onSet={set}
             onStepChange={setStep}
+            onToggleMustIncludeMode={toggleMustIncludeMode}
             step={step}
             toggleCategory={toggleCategory}
             visibleCategories={visibleCategories}

@@ -76,13 +76,22 @@ def _select_diverse(scored: list[tuple[float, float, list[Product], Counter]], k
 
     picked: list[tuple[float, float, list[Product]]] = []
     picked_ids: list[Counter] = []
-    for threshold in OVERLAP_LEVELS:
-        picked, picked_ids = _pick_within_threshold(eligible, k, limit, threshold, MAX_PRODUCT_REPEAT)
+    # Relax the repeat cap one step at a time (2, 3, 4, ... up to `limit`)
+    # before ever dropping it altogether. Jumping straight from "cap=2" to
+    # "no cap" the moment cap=2 can't fill every slot throws away real
+    # variety that a slightly looser cap could still provide - e.g. a set
+    # of 5 boxes that share a strong 4-item "core" only twice each (cap=3)
+    # is far more diverse than 5 boxes with an uncapped, unlimited core.
+    for repeat_cap in range(MAX_PRODUCT_REPEAT, limit + 1):
+        for threshold in OVERLAP_LEVELS:
+            picked, picked_ids = _pick_within_threshold(eligible, k, limit, threshold, repeat_cap)
+            if len(picked) == limit:
+                break
         if len(picked) == limit:
             break
-    if len(picked) < limit:
-        # Keep the repeat cap but drop the overlap-ratio constraint.
-        picked, picked_ids = _pick_within_threshold(eligible, k, limit, None, MAX_PRODUCT_REPEAT)
+        picked, picked_ids = _pick_within_threshold(eligible, k, limit, None, repeat_cap)
+        if len(picked) == limit:
+            break
     if len(picked) < limit:
         # Drop the repeat cap too, still within the quality floor.
         picked, picked_ids = _pick_within_threshold(eligible, k, limit)
