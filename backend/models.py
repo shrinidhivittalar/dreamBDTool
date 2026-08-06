@@ -2,6 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+try:
+    from .recommender_config import MAX_OPTION_COUNT
+except ImportError:
+    from recommender_config import MAX_OPTION_COUNT
+
 
 class Product(BaseModel):
     name: str
@@ -40,6 +45,12 @@ class RecommendationRequest(BaseModel):
     # All three real combinations: sweets-only, savory-only, or a mixed box.
     sweet_preference: Literal["sweet_only", "savory_only", "savory_and_sweet"] = "savory_and_sweet"
     required_categories: list[str] = Field(default_factory=list)
+    # How many distinct box options to try to return. Default of 5 matches
+    # the wizard's original fixed count; bounded at MAX_OPTION_COUNT (see
+    # recommender_config.py) since each extra option costs real search/
+    # scoring time and the diversity selector needs a large-enough pool of
+    # genuinely distinct combos to fill more slots meaningfully.
+    option_count: int = Field(default=5, gt=0, le=MAX_OPTION_COUNT)
     include_themed_customised: bool = False
     # Names of customization_eligible products (base cupcake flavors) that
     # should get the White Chocolate Disc surcharge added, if present in a

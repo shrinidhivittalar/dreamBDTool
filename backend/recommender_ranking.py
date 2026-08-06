@@ -20,6 +20,23 @@ class ScoredCombination:
     products: list[Product]
     identities: Counter
     breakdown: PricingBreakdown
+    vendor_identities: Counter = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.vendor_identities is None:
+            # set(...) first, not a straight Counter over every product -
+            # the diversity selector's vendor cap (recommender_diversity.py)
+            # means "this vendor may appear in at most N of the final
+            # options," the same unit the product repeat cap uses ("this
+            # product may appear in at most N options"). A box with 2
+            # Dream a Dozen products in it should count as 1 toward that
+            # cap, not 2 - counting every product previously meant a box
+            # with 2 same-vendor items burned through the cap twice as
+            # fast as a single-item box, blocking otherwise-valid options
+            # well before the cap's intended ceiling (confirmed live: a
+            # vendor cap of 8 for an 8-option request was being exhausted
+            # after only ~4 picks).
+            object.__setattr__(self, "vendor_identities", Counter(set(product.vendor for product in self.products if product.vendor)))
 
 
 def score_combination(

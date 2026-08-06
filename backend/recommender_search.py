@@ -4,12 +4,12 @@ try:
     from .models import Product
     from .pricing import pricing_engine
     from .recommender_config import CELL_BUDGET
-    from .recommender_rules import _bonus_value, _category_match, _unique_category_groups
+    from .recommender_rules import _bonus_value, _category_bucket_match, _unique_category_groups
 except ImportError:
     from models import Product
     from pricing import pricing_engine
     from recommender_config import CELL_BUDGET
-    from recommender_rules import _bonus_value, _category_match, _unique_category_groups
+    from recommender_rules import _bonus_value, _category_bucket_match, _unique_category_groups
 
 
 def _search_pool(
@@ -58,7 +58,7 @@ def _search_pool(
     c = len(group_keys)
     prices = [pricing_engine.dad_selling_price(product) for product in pool]
     bonuses = [_bonus_value(product, preferred) for product in pool]
-    eligible = [[_category_match(product, key) for key in group_keys] for product in pool]
+    eligible = [[_category_bucket_match(product, key) for key in group_keys] for product in pool]
 
     bucket_width = 1
     while True:
@@ -173,33 +173,47 @@ def _search_unique_pool(
     group_keys: tuple[str, ...],
     quota_counts: tuple[int, ...],
     unique_category_keys: tuple[str, ...],
+    cap: int = 1,
 ) -> list[tuple[float, list[int]]]:
-    """Find every reachable, product-unique and category-unique box.
+    """Find every reachable, product-unique box satisfying the category
+    quotas, where no broad category group (`unique_category_keys` - e.g.
+    sweet/savoury/healthy) supplies more than `cap` of the box's items.
+
+    `cap=1` (the default, and the only value this used to support) is a
+    hard "one item per broad category" rule - which by definition can never
+    fill a box bigger than `len(unique_category_keys)` items. The caller
+    raises `cap` for larger boxes (see recommender.py's
+    `_max_category_repeat_cap`) so a 6-item box against 3 broad groups asks
+    for "at most 2 per group" instead of silently giving up on spread
+    entirely and letting one category (usually whichever scores best,
+    e.g. all cupcakes) fill every remaining slot.
 
     The state stores its chosen items directly. That makes this separate
     constraint layer easy to change: edit UNIQUE_CATEGORY_GROUPS above,
     rather than the recommendation ranking or API contract.
     """
     positions = {key: position for position, key in enumerate(unique_category_keys)}
-    product_masks = [
-        sum(1 << positions[group] for group in _unique_category_groups(product))
+    product_groups = [
+        tuple(sorted(positions[group] for group in _unique_category_groups(product)))
         for product in pool
     ]
     buckets = [pricing_engine.price_bucket(product) for product in pool]
     final_quota = tuple(quota_counts)
-    # (item count, price bucket, quota progress, occupied category slots)
-    states: dict[tuple[int, int, tuple[int, ...], int], tuple[float, tuple[int, ...]]] = {
-        (0, 0, (0,) * len(group_keys), 0): (0.0, ())
+    empty_occupied = (0,) * len(unique_category_keys)
+    # (item count, price bucket, quota progress, per-broad-group counts so far)
+    states: dict[tuple[int, int, tuple[int, ...], tuple[int, ...]], tuple[float, tuple[int, ...]]] = {
+        (0, 0, (0,) * len(group_keys), empty_occupied): (0.0, ())
     }
 
     for index, product in enumerate(pool):
         next_states = states.copy()  # Snapshot keeps this a 0/1 search.
-        product_mask = product_masks[index]
+        item_groups = product_groups[index]
         product_bonus = _bonus_value(product, preferred)
-        matches = [group for group, key in enumerate(group_keys) if _category_match(product, key)]
+        matches = [group for group, key in enumerate(group_keys) if _category_bucket_match(product, key)]
         for (count, total, progress, occupied), (bonus, items) in states.items():
-            if count == k or occupied & product_mask:
+            if count == k or any(occupied[g] >= cap for g in item_groups):
                 continue
+            next_occupied = tuple(c + 1 if g in item_groups else c for g, c in enumerate(occupied))
             transitions = [progress]
             for group in matches:
                 if progress[group] < quota_counts[group]:
@@ -207,7 +221,7 @@ def _search_unique_pool(
                     advanced[group] += 1
                     transitions.append(tuple(advanced))
             for next_progress in transitions:
-                state = (count + 1, total + buckets[index], next_progress, occupied | product_mask)
+                state = (count + 1, total + buckets[index], next_progress, next_occupied)
                 candidate = (bonus + product_bonus, items + (index,))
                 current = next_states.get(state)
                 if current is None or candidate[0] > current[0]:
@@ -229,6 +243,7 @@ def generate_combinations(
     unique_category_keys: tuple[str, ...],
     allow_repeats: bool = False,
     enforce_unique_categories: bool = True,
+    category_repeat_cap: int = 1,
 ) -> list[tuple[float, list[int]]]:
     """Generate candidate item indexes for a recommendation request.
 
@@ -238,6 +253,6 @@ def generate_combinations(
     specific generator.
     """
     if enforce_unique_categories and not allow_repeats:
-        return _search_unique_pool(pool, k, preferred, group_keys, quota_counts, unique_category_keys)
+        return _search_unique_pool(pool, k, preferred, group_keys, quota_counts, unique_category_keys, category_repeat_cap)
     return _search_pool(pool, k, preferred, allow_repeats, group_keys, quota_counts)
 

@@ -3,7 +3,7 @@ import { BriefWizard } from './components/BriefWizard'
 import { ResultsPanel } from './components/ResultsPanel'
 import { categories, initialForm } from './config/brief'
 import { exportRecommendations, fetchProducts, fetchRecommendations, refreshProducts, repriceRecommendation, uploadProducts } from './lib/api'
-import { recommendationPayload, tagsFor } from './lib/briefForm'
+import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
 export function App() {
   const [step, setStep] = useState(1)
@@ -14,7 +14,9 @@ export function App() {
   const [catalogSize, setCatalogSize] = useState(0)
   const [lastBrief, setLastBrief] = useState(null)
   const [catalogRange, setCatalogRange] = useState(null)
+  const [products, setProducts] = useState([])
   const [productNames, setProductNames] = useState([])
+  const [pendingConflicts, setPendingConflicts] = useState([])
   const [lastPayload, setLastPayload] = useState(null)
   const [exporting, setExporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -27,20 +29,26 @@ export function App() {
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
         setProductNames(products.map(product => product.name))
+        setProducts(products)
       })
       .catch(() => {})
   }, [])
 
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
-  const toggleCategory = item => set('preferred_categories', form.preferred_categories.includes(item) ? form.preferred_categories.filter(value => value !== item) : [...form.preferred_categories, item])
+  // Guards against ending up with zero categories checked - an empty
+  // selection means "no restriction at all" on the backend, which would
+  // silently contradict a user who thinks they've excluded everything.
+  const toggleCategory = item => {
+    const already = form.preferred_categories.includes(item)
+    if (already && form.preferred_categories.length === 1) return
+    set('preferred_categories', already
+      ? form.preferred_categories.filter(value => value !== item)
+      : [...form.preferred_categories, item])
+  }
+  const applyCategoryPreset = presetCategories => set('preferred_categories', [...presetCategories])
   const budgetInvalid = form.budget_min > form.budget_max
   const maxPossibleTotal = catalogRange ? form.item_count * catalogRange.max : null
   const budgetTooHighForItems = !budgetInvalid && maxPossibleTotal !== null && maxPossibleTotal < form.budget_min
-  const visibleCategories = form.sweet_preference === 'sweet_only'
-    ? categories.filter(item => item.toLowerCase().includes('sweet'))
-    : form.sweet_preference === 'savory_only'
-      ? categories.filter(item => !item.toLowerCase().includes('sweet'))
-      : categories
   const addTag = (key, value) => set(key, [...new Set([...tagsFor(form, key), value.trim()])].filter(Boolean).join(', '))
   const removeTag = (key, tag) => set(key, tagsFor(form, key).filter(value => value !== tag).join(', '))
   const catalogNames = { productNames, categoryNames: categories }
@@ -55,7 +63,7 @@ export function App() {
     i === index ? { ...entry, mode: entry.mode === 'preferred' ? 'must' : 'preferred' } : entry
   ))
 
-  async function generate() {
+  async function runGenerate() {
     setLoading(true)
     setMessage('')
     const payload = { ...recommendationPayload(form, catalogNames), customize_products: [] }
@@ -77,6 +85,37 @@ export function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // A Must Include product outside every checked category (e.g. Samosa
+  // with "Sweet only" selected) is a real decision the user should make
+  // explicitly, not something the app silently resolves either way - stop
+  // here and ask, rather than generating with a silent override or a
+  // confusing "product not found" error.
+  function generate() {
+    const contradictions = findMandatoryExcludedConflicts(form)
+    if (contradictions.length) {
+      // A straight self-contradiction (same item in both Must Include and
+      // Exclude) has no "proceed anyway" answer worth offering - unlike
+      // the category conflict below, just point at it and stop.
+      setMessage(contradictions.map(({ value }) => `"${value}" is in both Must Include and Exclude - remove it from one.`).join(' '))
+      return
+    }
+    const conflicts = findMandatoryCategoryConflicts(form, products)
+    if (conflicts.length) {
+      setPendingConflicts(conflicts)
+      return
+    }
+    runGenerate()
+  }
+
+  function confirmPendingConflicts() {
+    setPendingConflicts([])
+    runGenerate()
+  }
+
+  function cancelPendingConflicts() {
+    setPendingConflicts([])
   }
 
   // Toggling a cupcake's customization re-prices only that one option's
@@ -139,6 +178,7 @@ export function App() {
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
         setProductNames(products.map(product => product.name))
+        setProducts(products)
       }
     } catch (error) {
       setMessage(error.message)
@@ -158,6 +198,7 @@ export function App() {
         const prices = products.map(product => product.selling_price)
         setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
         setProductNames(products.map(product => product.name))
+        setProducts(products)
       }
     } catch (error) {
       setMessage(error.message)
@@ -213,6 +254,7 @@ export function App() {
             loading={loading}
             onAddMustInclude={addMustInclude}
             onAddTag={addTag}
+            onApplyCategoryPreset={applyCategoryPreset}
             onGenerate={generate}
             onRemoveMustInclude={removeMustInclude}
             onRemoveTag={removeTag}
@@ -221,7 +263,6 @@ export function App() {
             onToggleMustIncludeMode={toggleMustIncludeMode}
             step={step}
             toggleCategory={toggleCategory}
-            visibleCategories={visibleCategories}
           />
           <ResultsPanel
             catalogSize={catalogSize}
@@ -239,6 +280,26 @@ export function App() {
       <footer className="mx-auto max-w-[1440px] px-6 pb-4 text-xs text-[#a39891] lg:px-10">
         Dream a Dozen - Business development workspace
       </footer>
+
+      {pendingConflicts.length > 0 && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <p className="modal-title">Outside your selected categories</p>
+            <p className="modal-body">
+              {pendingConflicts.map(({ value, product }) => (
+                <span key={value} className="modal-conflict-line">
+                  <strong>{product.name}</strong> is {product.category || 'not in'} your selected categories ({form.preferred_categories.join(', ')}).
+                </span>
+              ))}
+              Include {pendingConflicts.length === 1 ? 'it' : 'them'} anyway, since it's a Must Include item?
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="pill" onClick={cancelPendingConflicts}>Cancel, let me edit</button>
+              <button type="button" className="wizard-next" onClick={confirmPendingConflicts}>Include anyway <span>&rarr;</span></button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -3,8 +3,8 @@ from collections import Counter
 try:
     from .models import Product, Recommendation, RecommendationRequest
     from .pricing import pricing_engine
-    from .recommender_config import MAX_ITEM_COUNT
-    from .recommender_constraints import active_filter_descriptions, build_candidate_context, find_customization_addon
+    from .recommender_config import MAX_ITEM_COUNT, MAX_SIBLINGS_PER_POSITION, MAX_SIBLING_BASE_COMBOS, SIBLING_PRICE_TOLERANCE
+    from .recommender_constraints import CandidateContext, active_filter_descriptions, build_candidate_context, find_customization_addon
     from .recommender_diversity import _select_diverse
     from .recommender_ranking import (
         ScoredCombination,
@@ -13,13 +13,13 @@ try:
         recommendation_from_score,
         score_combination,
     )
-    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _unique_category_groups
+    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _unique_category_groups
     from .recommender_search import _search_pool, _search_unique_pool, generate_combinations
 except ImportError:
     from models import Product, Recommendation, RecommendationRequest
     from pricing import pricing_engine
-    from recommender_config import MAX_ITEM_COUNT
-    from recommender_constraints import active_filter_descriptions, build_candidate_context, find_customization_addon
+    from recommender_config import MAX_ITEM_COUNT, MAX_SIBLINGS_PER_POSITION, MAX_SIBLING_BASE_COMBOS, SIBLING_PRICE_TOLERANCE
+    from recommender_constraints import CandidateContext, active_filter_descriptions, build_candidate_context, find_customization_addon
     from recommender_diversity import _select_diverse
     from recommender_ranking import (
         ScoredCombination,
@@ -28,7 +28,7 @@ except ImportError:
         recommendation_from_score,
         score_combination,
     )
-    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _unique_category_groups
+    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _unique_category_groups
     from recommender_search import _search_pool, _search_unique_pool, generate_combinations
 
 
@@ -49,7 +49,16 @@ def _sibling_candidates(
     the same, so only one would ever appear without this).
     """
     item_groups = _unique_category_groups(item)
-    item_bucket = pricing_engine.price_bucket(item)
+    # A direct rupee tolerance (SIBLING_PRICE_TOLERANCE), not price_bucket
+    # equality - a fixed-width grid still splits two close-but-not-quite
+    # identical prices into different buckets right at the grid line, which
+    # left items like the catalog's cheapest Savoury product with no real
+    # siblings at all (confirmed live: it appeared in every single returned
+    # option because there was nothing else in its "bucket" to substitute).
+    # The real total price is still what budget-closeness scoring judges
+    # the final combo on, so a same-tier swap can't silently make a box
+    # drift far off budget.
+    item_price = pricing_engine.dad_selling_price(item)
     item_required = tuple(_category_match(item, group) for group in group_keys)
     siblings = []
     for candidate in pool:
@@ -57,7 +66,7 @@ def _sibling_candidates(
             continue
         if _unique_category_groups(candidate) != item_groups:
             continue
-        if pricing_engine.price_bucket(candidate) != item_bucket:
+        if abs(pricing_engine.dad_selling_price(candidate) - item_price) > SIBLING_PRICE_TOLERANCE:
             continue
         if tuple(_category_match(candidate, group) for group in group_keys) != item_required:
             continue
@@ -83,18 +92,44 @@ def _generate_scored_combinations(
     request: RecommendationRequest,
     customization_addon: Product | None = None,
 ) -> list[ScoredCombination]:
-    scored: list[ScoredCombination] = []
-    generated = generate_combinations(
-        context.pool,
-        context.k,
-        request.preferred_products,
-        context.group_keys,
-        context.quota_counts,
-        context.unique_category_keys,
-        allow_repeats=False,
-        enforce_unique_categories=True,
-    )
-    if not generated and context.k > len(context.unique_category_keys):
+    def search(cap: int):
+        return generate_combinations(
+            context.pool,
+            context.k,
+            request.preferred_products,
+            context.group_keys,
+            context.quota_counts,
+            context.unique_category_keys,
+            allow_repeats=False,
+            enforce_unique_categories=True,
+            category_repeat_cap=cap,
+        )
+
+    # Tries the strictest per-box category-repeat cap first (1 - true
+    # uniqueness), only loosening it if the box is bigger than the number of
+    # broad category groups that exist at all (so cap=1 is mathematically
+    # unsatisfiable), and even then only as far as the catalog forces -
+    # mirrors the diversity selector's progressive relaxation
+    # (recommender_diversity.py) rather than jumping straight from "1 per
+    # category" to "anything goes" the moment a 4-item box can't fit into 3
+    # categories. This is what stops a box from being, say, 3 cupcakes
+    # (all "sweet") plus 1 savoury filler just because cupcakes score well -
+    # each broad category is capped at a fair share of the box, not
+    # unlimited once its minimum quota is met.
+    # Bounded to at most two tries of the (comparatively expensive,
+    # dict-state) capped search before falling back to the fast, uncapped
+    # numpy DP - an escalating cap=1,2,3,...,k retry loop was briefly tried
+    # here and was too slow in practice (each larger cap multiplies the
+    # per-broad-group state space, and _recommend_any_count repeats this
+    # whole search once per item size 1..10).
+    if context.k <= len(context.unique_category_keys):
+        generated = search(1)
+    else:
+        generated = search(_max_category_repeat_cap(context.k, context.unique_category_keys))
+    if not generated:
+        # Last resort: no category-repeat constraint at all, so a catalog
+        # that can't otherwise fill this item count still returns something
+        # rather than nothing.
         generated = generate_combinations(
             context.pool,
             context.k,
@@ -105,18 +140,58 @@ def _generate_scored_combinations(
             allow_repeats=False,
             enforce_unique_categories=False,
         )
-    mandatory_keys = {_base_product_key(product) for product in context.mandatory_items}
-    seen_key_sets: set[frozenset[str]] = set()
 
-    def add_combo(pool_items: list[Product], bonus_sum: float) -> None:
+    mandatory_keys = {_base_product_key(product) for product in context.mandatory_items}
+    combos = [([context.pool[i] for i in item_indices], bonus_sum) for bonus_sum, item_indices in generated]
+
+    # Sibling substitution: for each combo, try swapping each item for a
+    # same-price-bucket, same-category alternative the search's tie-
+    # breaking discarded (see _sibling_candidates) - without this, every
+    # combo the search emits shares the same single best-bonus pick for any
+    # tied slot (e.g. every FMCG item costs the same, so it's always
+    # Frooti, never Lays), which is exactly the "same product in every
+    # option" bug this exists to prevent, so it always runs.
+    #
+    # Sampled with an even stride across the full combo list, not "top N by
+    # bonus_sum" - bonus_sum doesn't track final rank (that also depends on
+    # budget closeness, computed later) and, worse, the highest-bonus combos
+    # tend to be near-duplicates of each other (same core items, one tied
+    # slot swapped), so substituting only those covers one box repeatedly
+    # instead of spreading sibling alternatives across genuinely different
+    # underlying boxes. An even stride is cheap and reaches across the
+    # whole result space instead.
+    all_candidates = list(combos)
+    if len(combos) > MAX_SIBLING_BASE_COMBOS:
+        stride = len(combos) // MAX_SIBLING_BASE_COMBOS
+        combos_to_expand = combos[::stride][:MAX_SIBLING_BASE_COMBOS]
+    else:
+        combos_to_expand = combos
+    for pool_items, bonus_sum in combos_to_expand:
+        existing_keys = {_base_product_key(product) for product in pool_items} | mandatory_keys
+        for position, item in enumerate(pool_items):
+            # Capped per position too - without this, one combo's first,
+            # sibling-rich position (a bread roll with a dozen near-
+            # identical alternatives) could dominate that combo's share of
+            # the work before ever reaching the position actually causing a
+            # repeat (e.g. the one FMCG slot).
+            siblings = _sibling_candidates(context.pool, item, existing_keys, context.group_keys)[:MAX_SIBLINGS_PER_POSITION]
+            for sibling in siblings:
+                variant = list(pool_items)
+                variant[position] = sibling
+                variant_bonus = bonus_sum - _bonus_value(item, request.preferred_products) + _bonus_value(sibling, request.preferred_products)
+                all_candidates.append((variant, variant_bonus))
+
+    scored: list[ScoredCombination] = []
+    seen_key_sets: set[frozenset[str]] = set()
+    for pool_items, bonus_sum in all_candidates:
         pool_keys = [_base_product_key(product) for product in pool_items]
         # Skip boxes that would carry two size/variant SKUs of the same
         # flavor (e.g. a "mini" and a full-size version of one brownie).
         if len(set(pool_keys)) != len(pool_keys) or mandatory_keys & set(pool_keys):
-            return
+            continue
         key_set = frozenset(pool_keys) | mandatory_keys
         if key_set in seen_key_sets:
-            return
+            continue
         seen_key_sets.add(key_set)
         scored.append(
             score_combination(
@@ -132,26 +207,26 @@ def _generate_scored_combinations(
             )
         )
 
-    combos = [([context.pool[i] for i in item_indices], bonus_sum) for bonus_sum, item_indices in generated]
-    for pool_items, bonus_sum in combos:
-        add_combo(pool_items, bonus_sum)
-
-    # Sibling substitution: for each generated combo, try swapping each item
-    # for a same-price-bucket, same-category alternative the DP's tie-
-    # breaking discarded (see _sibling_candidates). Bounded by what the DP
-    # already generated, so this stays proportional to search output, not
-    # the whole catalog.
-    for pool_items, bonus_sum in combos:
-        existing_keys = {_base_product_key(product) for product in pool_items} | mandatory_keys
-        for position, item in enumerate(pool_items):
-            siblings = _sibling_candidates(context.pool, item, existing_keys, context.group_keys)
-            for sibling in siblings:
-                variant = list(pool_items)
-                variant[position] = sibling
-                variant_bonus = bonus_sum - _bonus_value(item, request.preferred_products) + _bonus_value(sibling, request.preferred_products)
-                add_combo(variant, variant_bonus)
-
     scored.sort(key=lambda entry: entry.score, reverse=True)
+    return scored
+
+
+def _scored_combinations_across_rotations(
+    products: list[Product],
+    request: RecommendationRequest,
+    context: CandidateContext,
+    customization_addon: Product | None,
+) -> list[ScoredCombination]:
+    # A single call already covers the common case (category_rotation_count
+    # == 1). When more categories are checked than fit in the box, rotating
+    # which subset gets folded (see build_candidate_context) and merging
+    # every rotation's combos means the diversity selector downstream has
+    # options covering each checked category to choose from, instead of
+    # only ever seeing boxes missing the same one category.
+    scored = list(_generate_scored_combinations(context, request, customization_addon))
+    for rotation in range(1, context.category_rotation_count):
+        rotated_context = build_candidate_context(products, request, category_rotation=rotation)
+        scored.extend(_generate_scored_combinations(rotated_context, request, customization_addon))
     return scored
 
 
@@ -171,12 +246,12 @@ def _recommend_fixed_count(
     if context.k == 0:
         return [mandatory_only_recommendation(context.mandatory_items, request, customization_addon)][:limit]
 
-    scored = _generate_scored_combinations(context, request, customization_addon)
+    scored = _scored_combinations_across_rotations(products, request, context, customization_addon)
     if messages is not None:
         append_budget_hint(scored, request, messages)
 
     selected = _select_diverse(
-        [(entry.score, entry.total, entry.products, entry.identities) for entry in scored],
+        [(entry.score, entry.total, entry.products, entry.identities, entry.vendor_identities) for entry in scored],
         context.k,
         limit,
     )
@@ -225,7 +300,7 @@ def _recommend_any_count(
                     context.mandatory_items, [], 0, Counter(), sized_request, customization_addon
                 )
             continue
-        scored.extend(_generate_scored_combinations(context, sized_request, customization_addon))
+        scored.extend(_scored_combinations_across_rotations(products, sized_request, context, customization_addon))
 
     if not considered_any_size:
         if messages is not None:
@@ -239,7 +314,7 @@ def _recommend_any_count(
 
     scored.sort(key=lambda entry: entry.score, reverse=True)
     selected = _select_diverse(
-        [(entry.score, entry.total, entry.products, entry.identities) for entry in scored],
+        [(entry.score, entry.total, entry.products, entry.identities, entry.vendor_identities) for entry in scored],
         MAX_ITEM_COUNT,
         limit,
     )

@@ -22,6 +22,7 @@ try:
     from .pricing import pricing_engine
     from .recommender import recommend
     from .recommender_constraints import find_customization_addon
+    from .recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from .validator import blocking_errors, validate_recommendations
 except ImportError:
     from data_provider import data_provider
@@ -39,6 +40,7 @@ except ImportError:
     from pricing import pricing_engine
     from recommender import recommend
     from recommender_constraints import find_customization_addon
+    from recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from validator import blocking_errors, validate_recommendations
 
 
@@ -57,6 +59,12 @@ def _warning_group_key(issue) -> tuple[str, str]:
     if issue.code == "preferred_category_missing":
         match = re.search(r"'([^']+)'", issue.message)
         return (issue.code, match.group(1) if match else issue.message)
+    if issue.code == "mandatory_overrides_preference":
+        # Already written as plain, specific BD-facing copy (names the exact
+        # product) - grouped on the full message so the same conflict
+        # repeated across options collapses to one line, same as the other
+        # codes, rather than needing its own re-humanized phrasing.
+        return (issue.code, issue.message)
     return (issue.code, "")
 
 
@@ -72,7 +80,16 @@ def _humanize_warning(code: str, key: str, affected_options: int) -> str:
     if code == "budget_exceeded":
         subject = "One option goes" if affected_options == 1 else f"{affected_options} options go"
         return f"{subject} over your budget."
-    return key
+    if code == "mandatory_overrides_preference":
+        # `key` is already the full validator message for this code (see
+        # _warning_group_key) - it's written as end-user copy already.
+        return key
+    # Any other warning code (there are a couple - see validator.py) has no
+    # specific rephrasing here yet; falling through to `key` (blank for
+    # codes not special-cased in _warning_group_key) used to render as a
+    # silent blank segment. Surface the raw code instead so a warning is at
+    # least visible, even if not prettified, rather than disappearing.
+    return key or f"({code.replace('_', ' ')})"
 
 
 def _validation_message(base_message: str | None, issues) -> str | None:
@@ -92,15 +109,90 @@ def _validation_message(base_message: str | None, issues) -> str | None:
     return f"{base_message} {warning_text}" if base_message else warning_text
 
 
-def _validated_response(recommendations, request: RecommendationRequest, catalog_size: int, message: str | None = None) -> RecommendationResponse:
+def _shortfall_message(recommendations, request: RecommendationRequest) -> str | None:
+    # A narrow filter (e.g. a single category, or a 1-item box) can have
+    # fewer genuinely distinct combinations than option_count asks for -
+    # the recommender already handles this gracefully (returns every
+    # distinct one it found rather than padding with near-duplicates or
+    # erroring), but without this, the UI just silently shows fewer cards
+    # than the slider says with no explanation, reading like a bug rather
+    # than "that's every option this catalog has."
+    found = len(recommendations)
+    if 0 < found < request.option_count:
+        noun = "option" if found == 1 else "options"
+        return f"Found {found} genuinely distinct {noun} for this brief - that's every combination this catalog supports here, out of the {request.option_count} requested."
+    return None
+
+
+def _customize_products_warning(request: RecommendationRequest, catalog_products: list[Product]) -> str | None:
+    # request.customize_products only ever takes effect inside pricing.py's
+    # _customized_products, which silently produces zero matches for a name
+    # that's misspelled or names a real but non-eligible product (e.g.
+    # "Samosa" - customization only applies to the 6 base cupcake flavors).
+    # Nothing surfaced that silence before - the surcharge just never
+    # appeared, with no indication why. Checked once against the whole
+    # catalog (not per-option) since eligibility is a catalog fact, not
+    # something that varies by which box you're looking at.
+    if not request.customize_products:
+        return None
+    invalid = [
+        name for name in request.customize_products
+        if not any(
+            _normalized_text(product.name) == _normalized_text(name) and product.customization_eligible
+            for product in catalog_products
+        )
+    ]
+    if not invalid:
+        return None
+    names = ", ".join(f"'{name}'" for name in invalid)
+    verb = "isn't" if len(invalid) == 1 else "aren't"
+    return f"{names} {verb} eligible for the White Chocolate Disc customization and will be ignored."
+
+
+def _preferred_excluded_conflict_warning(request: RecommendationRequest) -> str | None:
+    # A product named in both Preferred and Exclude is a softer version of
+    # the Must Include/Exclude contradiction (recommender_constraints.py) -
+    # Exclude always wins silently here (apply_catalog_filters removes it
+    # from the pool before preferred_products ever gets a chance to score
+    # it), which is a reasonable default since "preferred" was never a
+    # guarantee anyway, but the user should still be told their preference
+    # is being ignored rather than just quietly never seeing that product.
+    conflicts = [
+        preferred for preferred in request.preferred_products
+        if any(_matches(preferred, excluded) or _matches(excluded, preferred) or _fuzzy_matches(preferred, excluded) for excluded in request.excluded_products)
+    ]
+    if not conflicts:
+        return None
+    names = ", ".join(f"'{name}'" for name in conflicts)
+    verb = "is" if len(conflicts) == 1 else "are"
+    return f"{names} {verb} both Preferred and Excluded - Exclude wins, so {'it' if len(conflicts) == 1 else 'they'} won't appear."
+
+
+def _validated_response(
+    recommendations,
+    request: RecommendationRequest,
+    catalog_products: list[Product],
+    message: str | None = None,
+) -> RecommendationResponse:
     issues = validate_recommendations(recommendations, request)
     errors = blocking_errors(issues)
     if errors:
         raise HTTPException(status_code=500, detail=[issue.model_dump() for issue in errors])
+    # Every one of these is worth surfacing at once, not just the first
+    # that happens to be non-empty - a request can hit the option-count
+    # shortfall *and* have a bogus customize_products name *and* a
+    # Preferred/Excluded conflict simultaneously, and each is independently
+    # actionable feedback for the user.
+    combined_message = " ".join(filter(None, [
+        message,
+        _shortfall_message(recommendations, request),
+        _customize_products_warning(request, catalog_products),
+        _preferred_excluded_conflict_warning(request),
+    ])) or None
     return RecommendationResponse(
         recommendations=recommendations,
-        catalog_size=catalog_size,
-        message=_validation_message(message, issues),
+        catalog_size=len(catalog_products),
+        message=_validation_message(combined_message, issues),
         validation_issues=issues,
     )
 
@@ -196,7 +288,7 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
     products = data_provider.get_products()
     messages: list[str] = []
     try:
-        recommendations = recommend(products, parsed.recommendation_request, messages=messages)
+        recommendations = recommend(products, parsed.recommendation_request, limit=parsed.recommendation_request.option_count, messages=messages)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if messages:
@@ -205,7 +297,7 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
         message = "No valid combinations found for these requirements."
     else:
         message = None
-    return _validated_response(recommendations, parsed.recommendation_request, len(products), message)
+    return _validated_response(recommendations, parsed.recommendation_request, products, message)
 
 
 @app.post("/api/recommendations", response_model=RecommendationResponse)
@@ -213,7 +305,7 @@ def create_recommendations(request: RecommendationRequest) -> RecommendationResp
     products = data_provider.get_products()
     messages: list[str] = []
     try:
-        recommendations = recommend(products, request, messages=messages)
+        recommendations = recommend(products, request, limit=request.option_count, messages=messages)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if messages:
@@ -222,7 +314,7 @@ def create_recommendations(request: RecommendationRequest) -> RecommendationResp
         message = "No valid combinations found for these requirements."
     else:
         message = None
-    return _validated_response(recommendations, request, len(products), message)
+    return _validated_response(recommendations, request, products, message)
 
 
 @app.post("/api/recommendations/reprice", response_model=RepriceResponse)
@@ -265,7 +357,7 @@ def export_recommendation_file(export_format: str, request: RecommendationReques
 
     products = data_provider.get_products()
     try:
-        recommendations = recommend(products, request)
+        recommendations = recommend(products, request, limit=request.option_count)
         issues = validate_recommendations(recommendations, request)
         errors = blocking_errors(issues)
         if errors:

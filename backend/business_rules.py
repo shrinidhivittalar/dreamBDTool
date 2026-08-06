@@ -33,6 +33,23 @@ def _category_match(product: Product, category: str) -> bool:
     return _matches(product.category, category) or any(_matches(tag, category) for tag in product.tags)
 
 
+def _category_bucket_match(product: Product, category: str) -> bool:
+    """Matches the discrete category-picker taxonomy (Savoury, Healthy
+    Savoury, Sweet, FMCG) as mutually exclusive buckets - see the identical
+    helper in recommender_rules.py for why this differs from the plain
+    substring _category_match above (kept broad here for packaging's
+    "is this savory" check, which must still say yes for a Healthy -
+    Savoury item).
+    """
+    matched = _category_match(product, category)
+    if not matched:
+        return False
+    target = _normalized_text(category)
+    if target in ("savoury", "savory") and _category_match(product, "healthy"):
+        return False
+    return True
+
+
 def _unique_category_groups(product: Product) -> set[str]:
     """Return the broad category slots occupied by a product."""
     groups = {group for group in UNIQUE_CATEGORY_GROUPS if _category_match(product, group)}

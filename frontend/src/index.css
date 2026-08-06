@@ -50,6 +50,17 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .stepper button { width: 42px; height: 40px; border: 0; background: transparent; color: #bd285c; font-size: 20px; cursor: pointer; transition: background 150ms ease; }
 .stepper button:hover { background: #fff0f4; }
 .stepper span { color: #302a27; font-weight: 700; } .stepper small { color: #9b8f87; font-size: 11px; font-weight: 400; }
+.option-slider { width: 100%; height: 4px; border-radius: 999px; background: #e4dcd4; appearance: none; cursor: pointer; }
+.modal-backdrop { position: fixed; inset: 0; background: #302a2766; display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.modal-card { background: #fffdfa; border-radius: 12px; max-width: 420px; width: 100%; padding: 22px 24px; box-shadow: 0 20px 50px #302a2740; }
+.modal-title { font-weight: 700; font-size: 15px; color: #302a27; margin-bottom: 8px; }
+.modal-body { font-size: 13px; line-height: 1.6; color: #5b514b; display: flex; flex-direction: column; gap: 6px; }
+.modal-conflict-line { display: block; }
+.modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.modal-actions .pill { flex: 1; text-align: center; cursor: pointer; }
+.modal-actions .wizard-next { flex: 1; margin-top: 0; }
+.option-slider::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
+.option-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
 .segmented-control { display: flex; gap: 4px; padding: 4px; border: 1px solid #e4dcd4; border-radius: 10px; background: #f9f4ed; }
 .segmented-control button { flex: 1; border: 0; border-radius: 7px; background: transparent; color: #766b64; padding: 9px 8px; font-size: 12px; cursor: pointer; transition: all 150ms ease; }
 .segmented-control button.selected { background: #fffdfa; color: #a51f50; box-shadow: 0 2px 6px #49312612; font-weight: 700; }
@@ -78,6 +89,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .must-mode-toggle { border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
 .must-mode-must { background: #bd285c; color: #fff; }
 .must-mode-preferred { background: #fff; border: 1px solid #e3a9bd; color: #a51f50; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.preset-pill { border: 1px solid #eee5dd; color: #766b64; background: #fcf8f3; border-radius: 999px; padding: 5px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .18s; }
+.preset-pill:hover { border-color: #bd285c; }
+.preset-pill.matched { background: #bd285c; border-color: #bd285c; color: #fff; }
 .recap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 18px; }
 .recap-label { color: #9b8f87; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin-right: 3px; }
 .recap-chip { border: 1px solid #eee5dd; border-radius: 999px; background: #fcf8f3; color: #766b64; padding: 4px 10px; font-size: 11px; font-weight: 600; }

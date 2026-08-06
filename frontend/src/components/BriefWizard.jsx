@@ -2,8 +2,8 @@ import { Field } from './Field'
 import { MultiSelect } from './MultiSelect'
 import { MustIncludeField } from './MustIncludeField'
 import { TagField } from './TagField'
-import { MAX_ITEM_COUNT, RUPEE, categories, sweetOptions } from '../config/brief'
-import { tagsFor } from '../lib/briefForm'
+import { MAX_ITEM_COUNT, MAX_OPTION_COUNT, RUPEE, categories, categoryPresets } from '../config/brief'
+import { matchedCategoryPreset, tagsFor } from '../lib/briefForm'
 
 export function BriefWizard({
   budgetInvalid,
@@ -13,6 +13,7 @@ export function BriefWizard({
   loading,
   onAddMustInclude,
   onAddTag,
+  onApplyCategoryPreset,
   onGenerate,
   onRemoveMustInclude,
   onRemoveTag,
@@ -21,9 +22,10 @@ export function BriefWizard({
   onToggleMustIncludeMode,
   step,
   toggleCategory,
-  visibleCategories,
 }) {
   const itemCountLabel = `${form.item_count} items`
+  const matchedPreset = matchedCategoryPreset(form.preferred_categories, categoryPresets)
+  const matchedPresetLabel = categoryPresets.find(preset => preset.value === matchedPreset)?.label
 
   return (
     <aside className="card wizard-card h-fit p-5 sm:p-7">
@@ -45,10 +47,28 @@ export function BriefWizard({
           </div>
           {budgetTooHighForItems && <p className="field-note">Even {form.item_count} of the priciest catalog items ({RUPEE}{Math.round(catalogRange.max)} each) can't reach {RUPEE}{Math.round(form.budget_min).toLocaleString()}. Try raising the item count.</p>}
         </Field>
-        <Field label="Preference"><div className="segmented-control">{sweetOptions.map(option => <button type="button" key={option.value} className={form.sweet_preference === option.value ? 'selected' : ''} onClick={() => onSet('sweet_preference', option.value)}>{option.label}</button>)}</div></Field>
+        <Field label="What should be in the box?" hint="tap a shortcut, or pick categories directly">
+          <div className="presets">
+            {categoryPresets.map(preset => (
+              <button
+                type="button"
+                key={preset.value}
+                className={`preset-pill ${matchedPreset === preset.value ? 'matched' : ''}`}
+                onClick={() => onApplyCategoryPreset(preset.categories)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <MultiSelect items={categories} selected={form.preferred_categories} onToggle={toggleCategory} />
+          <p className="field-note">
+            {matchedPresetLabel
+              ? 'These are pre-selected for you - click any of them to turn a category on or off.'
+              : 'Custom mix - click any chip to turn it on or off.'}
+          </p>
+        </Field>
         <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) onStepChange(2) }} disabled={budgetInvalid}>Continue <span>&rarr;</span></button>
       </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
-        <Field label="Categories"><MultiSelect items={visibleCategories} selected={form.preferred_categories} onToggle={toggleCategory} /></Field>
         <Field label="Must include" hint="press enter or use commas - tap Must/Preferred on a tag to set it">
           <MustIncludeField
             entries={form.must_include}
@@ -62,7 +82,17 @@ export function BriefWizard({
           <TagField tags={tagsFor(form, 'excluded_products')} placeholder="e.g. Samosa" onAdd={value => onAddTag('excluded_products', value)} onRemove={tag => onRemoveTag('excluded_products', tag)} />
         </Field>
         <label className="checkbox-row"><input type="checkbox" checked={form.include_themed_customised} onChange={e => onSet('include_themed_customised', e.target.checked)} /><span>Include themed or customised items</span></label>
-        <div className="summary-card"><div><span className="summary-label">Your brief</span><strong>{RUPEE}{form.budget_min.toLocaleString()} - {RUPEE}{form.budget_max.toLocaleString()}</strong></div><span>{itemCountLabel}</span><span>{form.preferred_categories.length ? form.preferred_categories.join(', ') : 'Any category'}</span><span>{sweetOptions.find(option => option.value === form.sweet_preference)?.label}</span></div>
+        <Field label={`Number of options: ${form.option_count}`}>
+          <input
+            type="range"
+            className="option-slider"
+            min={1}
+            max={MAX_OPTION_COUNT}
+            value={form.option_count}
+            onChange={e => onSet('option_count', Number(e.target.value))}
+          />
+        </Field>
+        <div className="summary-card"><div><span className="summary-label">Your brief</span><strong>{RUPEE}{form.budget_min.toLocaleString()} - {RUPEE}{form.budget_max.toLocaleString()}</strong></div><span>{itemCountLabel}</span><span>{form.preferred_categories.join(', ')}</span></div>
         <div className="wizard-actions"><button onClick={() => onGenerate()} disabled={loading} className="wizard-next flex-1">{loading ? 'Finding a good fit...' : 'Generate recommendations'} <span>&rarr;</span></button></div>
       </div>}
     </aside>

@@ -34,6 +34,21 @@ def _matches(value: str, requested: str) -> bool:
     return _normalized_text(requested) in _normalized_text(value)
 
 
+FUZZY_CUTOFF = 0.75
+
+
+# Whole-string similarity (not the per-word scoring _suggest_names below
+# uses for "did you mean" ranking) - a single typo anywhere in a short
+# product/category name shouldn't sink the ratio, but this is deliberately
+# looser than a real spellcheck: it's for catching that two *already-typed*
+# fields likely refer to the same thing (e.g. Must Include "Samsoa" vs
+# Exclude "Samosa"), not for silently resolving a name to a catalog item -
+# that resolution still goes through the exact/substring-first
+# _resolve_mandatory below.
+def _fuzzy_matches(value: str, requested: str, cutoff: float = FUZZY_CUTOFF) -> bool:
+    return difflib.SequenceMatcher(None, _normalized_text(value), _normalized_text(requested)).ratio() >= cutoff
+
+
 # Strips a trailing size/variant qualifier (with or without a leading dash)
 # so "Fudgy walnut brownie - mini" and "Fudgy Walnut brownie" resolve to the
 # same base product - a box shouldn't carry two sizes of the same flavor.
@@ -54,6 +69,51 @@ def _base_product_key(product: Product) -> str:
 
 def _category_match(product: Product, category: str) -> bool:
     return _matches(product.category, category) or any(_matches(tag, category) for tag in product.tags)
+
+
+def _category_bucket_match(product: Product, category: str) -> bool:
+    """Matches against the discrete category-picker taxonomy (Savoury,
+    Healthy Savoury, Sweet, FMCG) as mutually exclusive buckets, unlike
+    _category_match's plain substring "contains" check.
+
+    _category_match is deliberately broad elsewhere - e.g. business_rules'
+    packaging rule needs a "Healthy - Savoury" item to still count as
+    savory for the ketchup-sachet rule, and the diversity/cap logic needs
+    it to occupy both the "savoury" and "healthy" broad slots at once. But
+    when a user picks the "Savoury" category (not "Healthy Savoury") from
+    the UI, they mean the plain-savoury bucket specifically - a "Healthy -
+    Savoury" item satisfying it too, just because "savoury" is textually
+    contained in "healthy savoury", made the two categories impossible to
+    tell apart. This is used wherever a request's preferred/required
+    category needs to match one specific taxonomy bucket: the category
+    pool filter, the per-category quota search, and the validator's
+    missing-category checks.
+    """
+    matched = _category_match(product, category)
+    if not matched:
+        return False
+    target = _normalized_text(category)
+    if target in ("savoury", "savory") and _category_match(product, "healthy"):
+        return False
+    return True
+
+
+def _max_category_repeat_cap(k: int, unique_category_keys: tuple[str, ...]) -> int:
+    # Only `len(unique_category_keys)` broad groups (sweet/savoury/healthy,
+    # plus whatever else the catalog defines) exist at all, so a box bigger
+    # than that count can never have every item in a distinct category -
+    # e.g. a 4-item box against 3 groups always needs at least one repeat.
+    # Spreading that repeat as evenly as the box size allows (ceil(k /
+    # groups)) is what stops "1 required item per category, then 3 more
+    # cupcakes on top" from passing, while still being satisfiable. Shared
+    # between recommender.py (the search's own cap) and
+    # recommender_constraints.py (the mandatory-item pool pre-filter, which
+    # used to hard-block *any* shared category regardless of box size -
+    # see build_candidate_context) so both agree on the same cap for the
+    # same box.
+    groups = max(1, len(unique_category_keys))
+    return max(1, -(-k // groups))
+
 
 def _unique_category_groups(product: Product) -> set[str]:
     """Return the broad category slots occupied by a product.

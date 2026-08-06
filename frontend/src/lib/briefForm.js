@@ -1,3 +1,5 @@
+import { bestFuzzyMatch, findProductByName, FUZZY_CUTOFF, matchingCategory, textOverlaps } from './match'
+
 export function tagsFor(form, key) {
   return form[key].split(',').map(value => value.trim()).filter(Boolean)
 }
@@ -6,50 +8,15 @@ function normalize(value) {
   return value.trim().toLowerCase().replace(/[-/]/g, ' ').replace(/\s+/g, ' ')
 }
 
-function levenshtein(a, b) {
-  const rows = a.length + 1
-  const cols = b.length + 1
-  const dp = Array.from({ length: rows }, () => new Array(cols).fill(0))
-  for (let i = 0; i < rows; i++) dp[i][0] = i
-  for (let j = 0; j < cols; j++) dp[0][j] = j
-  for (let i = 1; i < rows; i++) {
-    for (let j = 1; j < cols; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1])
-    }
-  }
-  return dp[rows - 1][cols - 1]
-}
-
-// 1 = identical, 0 = completely different - lets a single-letter typo
-// ("Healthy Savory" vs catalog's "Healthy Savoury") still classify
-// correctly instead of silently falling through to the product bucket.
-function similarity(a, b) {
-  const longer = Math.max(a.length, b.length)
-  if (longer === 0) return 1
-  return (longer - levenshtein(a, b)) / longer
-}
-
-const FUZZY_CUTOFF = 0.75
-
-function bestFuzzyMatch(target, names) {
-  let best = 0
-  for (const name of names) {
-    const score = similarity(target, normalize(name))
-    if (score > best) best = score
-  }
-  return best
-}
-
 // Auto-detects whether a "Must include" entry matches a known catalog
 // category or product name, so the BD user typing into one consolidated
 // field never has to know which backend bucket it belongs in. Tries an
 // exact (case/whitespace/dash-insensitive) match first, then falls back to
-// a fuzzy match so a typo'd category/product name still routes correctly
-// (mirrors the backend's difflib-based typo suggestions for mandatory
-// products/required categories). If neither matches, it's still accepted
-// as free text (same fallback behavior as today) rather than blocking entry.
+// a fuzzy match (see lib/match.js::bestFuzzyMatch) so a typo'd category/
+// product name still routes correctly (mirrors the backend's
+// difflib-based typo suggestions for mandatory products/required
+// categories). If neither matches, it's still accepted as free text (same
+// fallback behavior as today) rather than blocking entry.
 export function classifyMustInclude(value, { productNames = [], categoryNames = [] } = {}) {
   const target = normalize(value)
   if (categoryNames.some(name => normalize(name) === target)) return 'category'
@@ -80,6 +47,60 @@ export function splitMustInclude(mustInclude, catalogNames) {
     else mandatory_products.push(entry.value)
   }
   return { mandatory_products, required_categories, preferred_products }
+}
+
+// Which preset (if any) the current category selection exactly matches -
+// used to highlight the matching shortcut pill, or show "Custom mix" when
+// the user has hand-picked something that doesn't line up with a shortcut.
+// Order-independent, so checking chips in any sequence still matches.
+export function matchedCategoryPreset(selectedCategories, presets) {
+  const selected = new Set(selectedCategories)
+  const preset = presets.find(candidate => (
+    candidate.categories.length === selected.size && candidate.categories.every(category => selected.has(category))
+  ))
+  return preset ? preset.value : null
+}
+
+// Catches the "Sweet only + Must Include a Savoury product" conflict
+// *before* the request goes out, so the user gets an actual yes/no
+// decision instead of either a request that silently overrides their
+// category preference or a confusing "did not match any catalog item"
+// error (the product exists, it just isn't in the checked categories -
+// see recommender_constraints.py::apply_catalog_filters for the backend
+// side of this same override, which validator.py now also surfaces as a
+// warning after the fact). Asking up front is the more honest version of
+// that: the user decides whether Must Include should win, rather than
+// finding out after generating.
+export function findMandatoryCategoryConflicts(form, products) {
+  if (!form.preferred_categories.length || !products.length) return []
+  const conflicts = []
+  for (const entry of form.must_include) {
+    if (entry.mode !== 'must' || !entry.value.trim()) continue
+    const product = findProductByName(entry.value, products)
+    if (!product) continue // Might be a category name, not a product - nothing to conflict with here.
+    if (!matchingCategory(product, form.preferred_categories)) {
+      conflicts.push({ value: entry.value, product })
+    }
+  }
+  return conflicts
+}
+
+// The direct self-contradiction case: the same item typed into both Must
+// Include and Exclude. Unlike the category conflict above, there's no
+// "which one wins" question worth asking about - it's just a mistake to
+// point out and let the user fix, mirroring the backend's hard error
+// (recommender_constraints.py::build_candidate_context) rather than a
+// confirm-and-proceed dialog.
+export function findMandatoryExcludedConflicts(form) {
+  const excluded = tagsFor(form, 'excluded_products')
+  if (!excluded.length) return []
+  const conflicts = []
+  for (const entry of form.must_include) {
+    if (entry.mode !== 'must' || !entry.value.trim()) continue
+    const hit = excluded.find(value => textOverlaps(entry.value, value))
+    if (hit) conflicts.push({ value: entry.value, excluded: hit })
+  }
+  return conflicts
 }
 
 export function recommendationPayload(form, catalogNames) {
