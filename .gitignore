@@ -9,3 +9,6 @@ __pycache__/
 
 # Logs
 *.log
+
+# Session handoff notes (local reference only, not for the repo)
+SESSION_NOTES_*.md
