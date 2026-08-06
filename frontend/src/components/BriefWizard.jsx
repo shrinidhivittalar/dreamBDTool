@@ -69,7 +69,7 @@ export function BriefWizard({
         </Field>
         <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) onStepChange(2) }} disabled={budgetInvalid}>Continue <span>&rarr;</span></button>
       </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
-        <Field label="Must include" hint="press enter or use commas - tap Must/Preferred on a tag to set it">
+        <Field label="Must include (optional)" hint="press enter or use commas - tap Must/Preferred on a tag to set it">
           <MustIncludeField
             entries={form.must_include}
             placeholder="e.g. Brownie or Cookie"
@@ -78,7 +78,7 @@ export function BriefWizard({
             onToggleMode={onToggleMustIncludeMode}
           />
         </Field>
-        <Field label="Exclude" hint="never include these">
+        <Field label="Exclude (optional)" hint="never include these">
           <TagField tags={tagsFor(form, 'excluded_products')} placeholder="e.g. Samosa" onAdd={value => onAddTag('excluded_products', value)} onRemove={tag => onRemoveTag('excluded_products', tag)} />
         </Field>
         <label className="checkbox-row"><input type="checkbox" checked={form.include_themed_customised} onChange={e => onSet('include_themed_customised', e.target.checked)} /><span>Include themed or customised items</span></label>
