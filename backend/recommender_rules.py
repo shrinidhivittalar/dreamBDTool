@@ -67,6 +67,55 @@ def _base_product_key(product: Product) -> str:
         name = stripped
 
 
+# Two-word product "types" - a plain last-word split would collapse these
+# into a meaningless "pop"/"pita" bucket rather than the actual dish name.
+_COMPOUND_PRODUCT_TYPES = ("cake pop",)
+_BRACKET_SUFFIX_RE = re.compile(r"\s*[\[(][^\])]*[\])]\s*$")
+
+# Brand-name products (mostly FMCG) don't follow the catalog's usual
+# "<flavor/variant> <type>" naming, so the last-word heuristic below sees
+# "Frooti", "Maaza" and "Paper Boat - Swing" as three unrelated one-word
+# types and would happily put two juice brands in the same box. They're
+# all beverages, so this maps them there explicitly. Lays is chips, not a
+# drink, so it's deliberately left out - pairing a drink with a bag of
+# chips is a normal box, two juices is not. Keyed on the variant-stripped
+# base name (lowercase), same normalization _product_type_key already
+# does before falling through to the last-word heuristic.
+_PRODUCT_TYPE_OVERRIDES = {
+    "frooti": "beverage",
+    "maaza": "beverage",
+    "paper boat - swing": "beverage",
+}
+
+
+def _product_type_key(product: Product) -> str:
+    """The dish "type" a product belongs to (Cupcake, Brownie, Bun, Puff,
+    Roll, Sandwich, beverage...), independent of flavor/brand -
+    "Blueberry Cupcake" and "Chocolate buttercream Cupcake" are different
+    products (different `_base_product_key`) but the same type, and so are
+    "Frooti" and "Maaza" (see _PRODUCT_TYPE_OVERRIDES).
+
+    The catalog's naming convention is consistently "<flavor/variant> <type>"
+    (a handful of two-word types like "cake pop" aside), so the last
+    word(s) of the variant-stripped, bracket-stripped name is a reliable
+    signal for most products without needing a hand-maintained mapping;
+    brand-name products that don't fit that pattern get an explicit
+    override instead. Used to stop a box from carrying two different
+    flavors/brands of what a recipient would perceive as "the same item
+    twice" (e.g. two cupcakes, two juices) - unlike _base_product_key,
+    which only catches an exact flavor repeated at a different size.
+    """
+    override = _PRODUCT_TYPE_OVERRIDES.get(_base_product_key(product))
+    if override:
+        return override
+    name = _BRACKET_SUFFIX_RE.sub("", _base_product_key(product)).strip()
+    for compound in _COMPOUND_PRODUCT_TYPES:
+        if name.endswith(compound):
+            return compound
+    words = name.split()
+    return words[-1] if words else name
+
+
 def _category_match(product: Product, category: str) -> bool:
     return _matches(product.category, category) or any(_matches(tag, category) for tag in product.tags)
 

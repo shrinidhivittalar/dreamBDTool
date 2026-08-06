@@ -13,7 +13,7 @@ try:
         recommendation_from_score,
         score_combination,
     )
-    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _unique_category_groups
+    from .recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _product_type_key, _unique_category_groups
     from .recommender_search import _search_pool, _search_unique_pool, generate_combinations
 except ImportError:
     from models import Product, Recommendation, RecommendationRequest
@@ -28,7 +28,7 @@ except ImportError:
         recommendation_from_score,
         score_combination,
     )
-    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _unique_category_groups
+    from recommender_rules import _base_product_key, _bonus_value, _category_match, _closeness, _max_category_repeat_cap, _product_type_key, _unique_category_groups
     from recommender_search import _search_pool, _search_unique_pool, generate_combinations
 
 
@@ -181,7 +181,8 @@ def _generate_scored_combinations(
                 variant_bonus = bonus_sum - _bonus_value(item, request.preferred_products) + _bonus_value(sibling, request.preferred_products)
                 all_candidates.append((variant, variant_bonus))
 
-    scored: list[ScoredCombination] = []
+    mandatory_type_keys = {_product_type_key(product) for product in context.mandatory_items}
+    deduped_candidates: list[tuple[list[Product], float, list[str], bool]] = []
     seen_key_sets: set[frozenset[str]] = set()
     for pool_items, bonus_sum in all_candidates:
         pool_keys = [_base_product_key(product) for product in pool_items]
@@ -193,6 +194,23 @@ def _generate_scored_combinations(
         if key_set in seen_key_sets:
             continue
         seen_key_sets.add(key_set)
+        type_keys = [_product_type_key(product) for product in pool_items]
+        type_unique = len(set(type_keys)) == len(type_keys) and not (mandatory_type_keys & set(type_keys))
+        deduped_candidates.append((pool_items, bonus_sum, pool_keys, type_unique))
+
+    # Two different flavors of the same dish (e.g. "Blueberry Cupcake" and
+    # "Chocolate buttercream Cupcake") pass the SKU-uniqueness check above
+    # just fine - they're genuinely different products - but a box with
+    # two cupcakes (or two juices) still reads as "the same item twice" to
+    # whoever opens it. type_unique is carried on the combo itself rather
+    # than filtered here - the caller (_recommend_fixed_count /
+    # _recommend_any_count) decides whether to prefer type-unique combos,
+    # since _recommend_any_count merges combos across every box size and
+    # needs to make that call once on the *whole* merged pool, not per
+    # size (a size with no clean combo shouldn't leak a duplicate-type box
+    # into the merge when other sizes have plenty of clean alternatives).
+    scored: list[ScoredCombination] = []
+    for pool_items, bonus_sum, pool_keys, type_unique in deduped_candidates:
         scored.append(
             score_combination(
                 context.mandatory_items,
@@ -204,11 +222,21 @@ def _generate_scored_combinations(
                 Counter(pool_keys),
                 request,
                 customization_addon,
+                type_unique,
             )
         )
 
     scored.sort(key=lambda entry: entry.score, reverse=True)
     return scored
+
+
+def _prefer_type_unique(scored: list[ScoredCombination]) -> list[ScoredCombination]:
+    # Applied once on the final merged pool (see _scored_combinations_across_rotations's
+    # docstring for why not per-size): if any type-unique combo exists at
+    # all, only those compete for a spot; duplicate-dish-type combos are
+    # the fallback only when the whole pool has nothing else.
+    type_unique = [entry for entry in scored if entry.type_unique]
+    return type_unique if type_unique else scored
 
 
 def _scored_combinations_across_rotations(
@@ -246,7 +274,7 @@ def _recommend_fixed_count(
     if context.k == 0:
         return [mandatory_only_recommendation(context.mandatory_items, request, customization_addon)][:limit]
 
-    scored = _scored_combinations_across_rotations(products, request, context, customization_addon)
+    scored = _prefer_type_unique(_scored_combinations_across_rotations(products, request, context, customization_addon))
     if messages is not None:
         append_budget_hint(scored, request, messages)
 
@@ -312,6 +340,11 @@ def _recommend_any_count(
             messages.append("Only the mandatory product(s) fit within the requested constraints.")
         return [recommendation_from_score(mandatory_only, request)][:limit] if mandatory_only else []
 
+    # Applied once here, after merging every box size's combos together -
+    # a size where no clean (type-unique) combo existed must not leak a
+    # duplicate-dish-type box into the merge just because other sizes had
+    # plenty of clean options.
+    scored = _prefer_type_unique(scored)
     scored.sort(key=lambda entry: entry.score, reverse=True)
     selected = _select_diverse(
         [(entry.score, entry.total, entry.products, entry.identities, entry.vendor_identities) for entry in scored],

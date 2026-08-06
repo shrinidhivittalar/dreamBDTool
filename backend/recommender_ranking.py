@@ -21,6 +21,14 @@ class ScoredCombination:
     identities: Counter
     breakdown: PricingBreakdown
     vendor_identities: Counter = None  # type: ignore[assignment]
+    # False if this combo repeats a dish type (two cupcakes, two juices...).
+    # Left on the combo itself rather than filtered out per-size in
+    # recommender.py, so _recommend_any_count (which merges combos across
+    # every box size before picking) can prefer type-unique combos across
+    # the *whole* merged pool - filtering per size let a size where no
+    # clean combo existed leak a duplicate-type box into the merge even
+    # when other sizes had plenty of clean alternatives.
+    type_unique: bool = True
 
     def __post_init__(self):
         if self.vendor_identities is None:
@@ -46,13 +54,14 @@ def score_combination(
     identities: Counter,
     request: RecommendationRequest,
     customization_addon: Product | None = None,
+    type_unique: bool = True,
 ) -> ScoredCombination:
     products = mandatory_items + pool_items
     breakdown = pricing_engine.breakdown(products, request, customization_addon)
     total = breakdown.total_price
     fixed_bonus = sum(_bonus_value(product, request.preferred_products) for product in mandatory_items)
     score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus + bonus_sum
-    return ScoredCombination(score=score, total=total, products=products, identities=identities, breakdown=breakdown)
+    return ScoredCombination(score=score, total=total, products=products, identities=identities, breakdown=breakdown, type_unique=type_unique)
 
 
 def recommendation_from_score(scored: ScoredCombination, request: RecommendationRequest) -> Recommendation:
