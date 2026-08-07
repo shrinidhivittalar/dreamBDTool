@@ -181,8 +181,8 @@ def _generate_scored_combinations(
                 variant_bonus = bonus_sum - _bonus_value(item, request.preferred_products) + _bonus_value(sibling, request.preferred_products)
                 all_candidates.append((variant, variant_bonus))
 
-    mandatory_type_keys = {_product_type_key(product) for product in context.mandatory_items}
-    deduped_candidates: list[tuple[list[Product], float, list[str], bool]] = []
+    mandatory_type_keys = [_product_type_key(product) for product in context.mandatory_items]
+    deduped_candidates: list[tuple[list[Product], float, list[str], int]] = []
     seen_key_sets: set[frozenset[str]] = set()
     for pool_items, bonus_sum in all_candidates:
         pool_keys = [_base_product_key(product) for product in pool_items]
@@ -194,9 +194,9 @@ def _generate_scored_combinations(
         if key_set in seen_key_sets:
             continue
         seen_key_sets.add(key_set)
-        type_keys = [_product_type_key(product) for product in pool_items]
-        type_unique = len(set(type_keys)) == len(type_keys) and not (mandatory_type_keys & set(type_keys))
-        deduped_candidates.append((pool_items, bonus_sum, pool_keys, type_unique))
+        type_keys = mandatory_type_keys + [_product_type_key(product) for product in pool_items]
+        type_repeats = max(Counter(type_keys).values()) - 1
+        deduped_candidates.append((pool_items, bonus_sum, pool_keys, type_repeats))
 
     # Two different flavors of the same dish (e.g. "Blueberry Cupcake" and
     # "Chocolate buttercream Cupcake") pass the SKU-uniqueness check above
@@ -210,7 +210,7 @@ def _generate_scored_combinations(
     # size (a size with no clean combo shouldn't leak a duplicate-type box
     # into the merge when other sizes have plenty of clean alternatives).
     scored: list[ScoredCombination] = []
-    for pool_items, bonus_sum, pool_keys, type_unique in deduped_candidates:
+    for pool_items, bonus_sum, pool_keys, type_repeats in deduped_candidates:
         scored.append(
             score_combination(
                 context.mandatory_items,
@@ -222,7 +222,7 @@ def _generate_scored_combinations(
                 Counter(pool_keys),
                 request,
                 customization_addon,
-                type_unique,
+                type_repeats,
             )
         )
 
@@ -232,11 +232,17 @@ def _generate_scored_combinations(
 
 def _prefer_type_unique(scored: list[ScoredCombination]) -> list[ScoredCombination]:
     # Applied once on the final merged pool (see _scored_combinations_across_rotations's
-    # docstring for why not per-size): if any type-unique combo exists at
-    # all, only those compete for a spot; duplicate-dish-type combos are
-    # the fallback only when the whole pool has nothing else.
-    type_unique = [entry for entry in scored if entry.type_unique]
-    return type_unique if type_unique else scored
+    # docstring for why not per-size): only combos tied for the fewest
+    # dish-type repeats compete for a spot. Zero-repeat (type_unique) combos
+    # win outright when any exist; when a box is bigger than the number of
+    # available dish types (e.g. 8 sweets, 5 sweet types), zero repeats is
+    # impossible for every combo, so this falls back to whatever the lowest
+    # achievable repeat count is (one repeat, say) rather than giving up on
+    # diversity entirely and letting five cupcakes into the same box.
+    if not scored:
+        return scored
+    min_repeats = min(entry.type_repeats for entry in scored)
+    return [entry for entry in scored if entry.type_repeats == min_repeats]
 
 
 def _scored_combinations_across_rotations(

@@ -21,14 +21,22 @@ class ScoredCombination:
     identities: Counter
     breakdown: PricingBreakdown
     vendor_identities: Counter = None  # type: ignore[assignment]
-    # False if this combo repeats a dish type (two cupcakes, two juices...).
-    # Left on the combo itself rather than filtered out per-size in
-    # recommender.py, so _recommend_any_count (which merges combos across
-    # every box size before picking) can prefer type-unique combos across
-    # the *whole* merged pool - filtering per size let a size where no
-    # clean combo existed leak a duplicate-type box into the merge even
-    # when other sizes had plenty of clean alternatives.
-    type_unique: bool = True
+    # How many extra copies of its most-repeated dish type this combo
+    # carries (two cupcakes, two juices...) - e.g. 4 cupcakes + 4 other
+    # singles is 3, same as a spread-out 2+2+2+1+1; measuring the worst
+    # offender rather than the total repeat count is what makes the second
+    # shape win. 0 means every dish type appears once. Left on the combo
+    # itself rather than filtered out per-size in recommender.py, so
+    # _recommend_any_count (which merges combos across every box size
+    # before picking) can prefer the least-repetitive combos across the
+    # *whole* merged pool - filtering per size let a size where no clean
+    # combo existed leak a duplicate-type box into the merge even when
+    # other sizes had plenty of clean alternatives. A count rather than a
+    # bool so that when zero repeats genuinely isn't achievable (box bigger
+    # than the number of available dish types), the fallback can still
+    # prefer "at most one repeat of any type" over "one type repeated five
+    # times" instead of giving up on diversity entirely.
+    type_repeats: int = 0
 
     def __post_init__(self):
         if self.vendor_identities is None:
@@ -54,14 +62,14 @@ def score_combination(
     identities: Counter,
     request: RecommendationRequest,
     customization_addon: Product | None = None,
-    type_unique: bool = True,
+    type_repeats: int = 0,
 ) -> ScoredCombination:
     products = mandatory_items + pool_items
     breakdown = pricing_engine.breakdown(products, request, customization_addon)
     total = breakdown.total_price
     fixed_bonus = sum(_bonus_value(product, request.preferred_products) for product in mandatory_items)
     score = _closeness(total, request.budget_min, request.budget_max) + fixed_bonus + bonus_sum
-    return ScoredCombination(score=score, total=total, products=products, identities=identities, breakdown=breakdown, type_unique=type_unique)
+    return ScoredCombination(score=score, total=total, products=products, identities=identities, breakdown=breakdown, type_repeats=type_repeats)
 
 
 def recommendation_from_score(scored: ScoredCombination, request: RecommendationRequest) -> Recommendation:
