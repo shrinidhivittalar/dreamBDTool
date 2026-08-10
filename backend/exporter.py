@@ -24,7 +24,6 @@ EXPORT_COLUMNS = [
     "packaging_cost",
     "discount",
     "remaining_budget",
-    "score",
     "packaging",
 ]
 
@@ -78,7 +77,6 @@ def recommendation_rows(recommendations: list[Recommendation]) -> list[dict[str,
             "packaging_cost": recommendation.packaging_cost,
             "discount": recommendation.discount,
             "remaining_budget": recommendation.remaining_budget,
-            "score": recommendation.score,
             "packaging": ", ".join(item.name for item in recommendation.packaging),
         })
     return rows
