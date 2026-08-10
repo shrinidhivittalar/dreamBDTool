@@ -288,7 +288,7 @@ export function App() {
             <p className="modal-body">
               {pendingConflicts.map(({ value, product }) => (
                 <span key={value} className="modal-conflict-line">
-                  <strong>{product.name}</strong> is {product.category || 'not in'} your selected categories ({form.preferred_categories.join(', ')}).
+                  <strong>{product.name}</strong> is {product.category ? `${product.category}, outside` : 'not in'} your selected categories ({form.preferred_categories.join(', ')}).
                 </span>
               ))}
               Include {pendingConflicts.length === 1 ? 'it' : 'them'} anyway, since it's a Must Include item?

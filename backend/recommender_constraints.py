@@ -8,11 +8,11 @@ try:
         _category_bucket_match,
         _category_match,
         _fuzzy_matches,
-        _is_explicitly_mandatory,
         _is_themed_or_customised,
         _matches,
         _max_category_repeat_cap,
         _resolve_mandatory,
+        _resolve_mandatory_exemptions,
         _suggest_names,
         _unique_category_groups,
     )
@@ -23,11 +23,11 @@ except ImportError:
         _category_bucket_match,
         _category_match,
         _fuzzy_matches,
-        _is_explicitly_mandatory,
         _is_themed_or_customised,
         _matches,
         _max_category_repeat_cap,
         _resolve_mandatory,
+        _resolve_mandatory_exemptions,
         _suggest_names,
         _unique_category_groups,
     )
@@ -71,6 +71,17 @@ def apply_catalog_filters(products: list[Product], request: RecommendationReques
     # box item, under any setting - not include_themed_customised, not even
     # an explicit mandatory_products request. They only apply as a surcharge
     # via request.customize_products, handled in pricing.py.
+    # Resolved once, up front, against the full pool - see
+    # _resolve_mandatory_exemptions for why this (not the lenient substring
+    # check _is_explicitly_mandatory used to use here) is what exempts a
+    # Must Include item from the filters below: it exempts only the exact
+    # catalog item(s) "Samosa" actually resolves to, not every product
+    # whose name happens to contain "Samosa".
+    mandatory_exempt_ids = {id(products[i]) for i in _resolve_mandatory_exemptions(products, request.mandatory_products)}
+
+    def _is_mandatory_exempt(product: Product) -> bool:
+        return id(product) in mandatory_exempt_ids
+
     candidates = [product for product in products if not product.is_customization_addon]
     candidates = [
         product for product in candidates
@@ -80,7 +91,7 @@ def apply_catalog_filters(products: list[Product], request: RecommendationReques
         candidates = [
             product for product in candidates
             if not _is_themed_or_customised(product)
-            or _is_explicitly_mandatory(product, request.mandatory_products)
+            or _is_mandatory_exempt(product)
         ]
     # Categories/vendors/sweet-preference are soft filters that narrow the
     # pool - a "Must include" product is a stronger, explicit instruction
@@ -99,23 +110,23 @@ def apply_catalog_filters(products: list[Product], request: RecommendationReques
         candidates = [
             product for product in candidates
             if any(_category_bucket_match(product, category) for category in request.preferred_categories)
-            or _is_explicitly_mandatory(product, request.mandatory_products)
+            or _is_mandatory_exempt(product)
         ]
     if request.preferred_vendors:
         candidates = [
             product for product in candidates
             if any(_matches(product.vendor, vendor) for vendor in request.preferred_vendors)
-            or _is_explicitly_mandatory(product, request.mandatory_products)
+            or _is_mandatory_exempt(product)
         ]
     if request.sweet_preference == "sweet_only":
         candidates = [
             product for product in candidates
-            if _category_match(product, "sweet") or _is_explicitly_mandatory(product, request.mandatory_products)
+            if _category_match(product, "sweet") or _is_mandatory_exempt(product)
         ]
     elif request.sweet_preference == "savory_only":
         candidates = [
             product for product in candidates
-            if not _category_match(product, "sweet") or _is_explicitly_mandatory(product, request.mandatory_products)
+            if not _category_match(product, "sweet") or _is_mandatory_exempt(product)
         ]
     # "savory_and_sweet" applies no extra filtering - both are allowed.
     return candidates

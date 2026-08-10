@@ -191,6 +191,37 @@ def _is_themed_or_customised(product: Product) -> bool:
 def _is_explicitly_mandatory(product: Product, mandatory_products: list[str]) -> bool:
     return any(_matches(product.name, wanted) for wanted in mandatory_products)
 
+
+def _resolve_mandatory_exemptions(products: list[Product], mandatory_products: list[str]) -> set[int]:
+    """Like _resolve_mandatory, but tolerant: used to exempt the specific
+    catalog items a Must Include entry actually resolves to from the
+    category/vendor/sweet-preference filters in apply_catalog_filters,
+    *before* _resolve_mandatory itself runs on the filtered pool.
+
+    Unlike the lenient substring check _is_explicitly_mandatory does, this
+    mirrors _resolve_mandatory's exact-match-first preference so a Must
+    Include of "Samosa" exempts only the product named exactly "Samosa" -
+    not every other catalog item whose name happens to contain the word
+    (e.g. "Baked Vegetable Samosa"), which previously let those unrelated
+    items silently bypass a "Sweet only" filter alongside the one actually
+    requested. If a mandatory name has no exact match, falls back to a
+    substring match only when it's unique - same ambiguity rule
+    _resolve_mandatory enforces, so this never exempts more than
+    _resolve_mandatory would ultimately resolve.
+    """
+    exempt: set[int] = set()
+    for wanted in mandatory_products:
+        needle = wanted.strip().lower()
+        exact = [i for i, product in enumerate(products) if product.name.strip().lower() == needle]
+        if exact:
+            exempt.update(exact)
+            continue
+        substring = [i for i, product in enumerate(products) if _matches(product.name, wanted)]
+        if len(substring) == 1:
+            exempt.update(substring)
+    return exempt
+
+
 def _is_in_house(product: Product) -> bool:
     return "in-house" in product.sourcing.lower() or "dream a dozen" in product.vendor.lower()
 

@@ -48,6 +48,31 @@ def test_mandatory_exceeds_item_count_raises():
         recommend(_catalog(), request)
 
 
+def test_sweet_only_mandatory_exemption_is_exact_not_substring():
+    # Regression test: a Must Include of "Samosa" used to exempt every
+    # catalog item whose name merely *contained* "Samosa" from the
+    # "Sweet only" filter (a lenient substring check), not just the one
+    # product actually requested - so "Baked Samosa Roll" and "Mini Samosa
+    # Platter" would silently sneak into a "Sweet only" box alongside the
+    # sweets, crowding them out. Only the exact "Samosa" match should be
+    # exempt; the other two must still be filtered out as savory.
+    catalog = _catalog() + [
+        Product(name="Baked Samosa Roll", selling_price=40, vendor="Cakewala", tags=["Savoury"], sourcing="Outsourced"),
+        Product(name="Mini Samosa Platter", selling_price=50, vendor="Cakewala", tags=["Savoury"], sourcing="Outsourced"),
+    ]
+    request = RecommendationRequest(
+        budget_min=100, budget_max=400, item_count=4,
+        sweet_preference="sweet_only", mandatory_products=["Samosa"],
+    )
+    recommendations = recommend(catalog, request)
+    assert recommendations
+    for rec in recommendations:
+        names = [product.name for product in rec.products]
+        assert "Samosa" in names
+        assert "Baked Samosa Roll" not in names
+        assert "Mini Samosa Platter" not in names
+
+
 def test_budget_max_below_min_raises():
     with pytest.raises(ValueError):
         RecommendationRequest(budget_min=300, budget_max=200, item_count=2)
