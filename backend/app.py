@@ -262,7 +262,13 @@ async def upload_products(request: Request) -> dict[str, object]:
     filename = request.headers.get("x-filename", "uploaded_catalog.xlsx")
     try:
         status = data_provider.refresh_from_bytes(payload, filename=filename, cache=True)
-    except ValueError as error:
+    except (ValueError, RuntimeError) as error:
+        # Both are "this file is unusable" business errors - a missing
+        # required column raises ValueError (catalog_loader.load_catalog),
+        # an otherwise-parseable file with zero valid rows raises
+        # RuntimeError (data_provider.refresh_from_bytes). Neither should
+        # surface as an opaque 500; the BD user needs the actual reason so
+        # they can fix the file and re-upload.
         raise HTTPException(status_code=400, detail=str(error)) from error
     return status.as_dict()
 

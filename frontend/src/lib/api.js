@@ -88,6 +88,13 @@ export async function uploadProducts(file) {
     headers: { 'x-filename': file.name },
     body: await file.arrayBuffer(),
   })
-  if (!response.ok) throw new Error(`Upload failed (${response.status})`)
+  if (!response.ok) {
+    let detail = null
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {}
+    throw new Error(detail || `Upload failed (${response.status})`)
+  }
   return response.json()
 }
