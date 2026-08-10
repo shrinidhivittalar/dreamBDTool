@@ -13,7 +13,8 @@ button, input { font: inherit; }
 .input { width: 100%; border: 1px solid #d9cfc6; background: #fffdfa; border-radius: 8px; padding: 8px 11px; color: #2d2927; outline: none; transition: border .2s, box-shadow .2s; }
 .input:focus { border-color: #bd285c; box-shadow: 0 0 0 3px #bd285c18; }
 .pill { border: 1px solid #dacfc6; color: #514844; background: #fffdfa; border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; transition: all .18s; }
-.pill:hover, .pill.active { border-color: #bd285c; background: #fff0f4; color: #a51f50; }
+.pill:hover { border-color: #bd285c; background: #fff0f4; color: #a51f50; }
+.pill.active { border-color: #bd285c; background: #bd285c; color: #fff; }
 .card { background: #fffdfa; border: 1px solid #e4dcd4; border-radius: 12px; }
 /* UI polish */
 ::selection { background: #f2bfd0; color: #5d1630; }
