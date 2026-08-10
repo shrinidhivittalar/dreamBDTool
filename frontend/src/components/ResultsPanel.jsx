@@ -14,8 +14,8 @@ export function ResultsPanel({ catalogSize, lastBrief, message, recommendations,
           )}
           {recommendations.length > 0 && onExport && (
             <div className="flex items-center gap-1.5">
-              <button type="button" className="pill" disabled={exporting} onClick={() => onExport('csv', 'summary')}>Export (per box)</button>
-              <button type="button" className="pill" disabled={exporting} onClick={() => onExport('csv', 'itemized')}>Export (row-wise)</button>
+              <button type="button" className="pill" disabled={exporting} onClick={() => onExport('xlsx', 'summary')}>Export (per box)</button>
+              <button type="button" className="pill" disabled={exporting} onClick={() => onExport('xlsx', 'itemized')}>Export (row-wise)</button>
             </div>
           )}
         </div>
