@@ -198,7 +198,11 @@ def _validated_response(
 
 
 def _daily_refresh_enabled() -> bool:
-    return os.environ.get("PRODUCT_DAILY_REFRESH", "true").strip().lower() in {"1", "true", "yes", "on"}
+    # Defaults to off - we don't currently have access to the Zoho sheet
+    # this pulls from, so a daily background pull would just fail on a
+    # timer for no benefit. Set PRODUCT_DAILY_REFRESH=true once access is
+    # back; the endpoint and _auto_refresh_enabled toggle are untouched.
+    return os.environ.get("PRODUCT_DAILY_REFRESH", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @asynccontextmanager

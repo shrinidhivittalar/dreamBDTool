@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BriefWizard } from './components/BriefWizard'
 import { ResultsPanel } from './components/ResultsPanel'
 import { categories, initialForm } from './config/brief'
-import { exportRecommendations, fetchProducts, fetchRecommendations, refreshProducts, repriceRecommendation, uploadProducts } from './lib/api'
+import { exportRecommendations, fetchProducts, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
 import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
 export function App() {
@@ -169,24 +169,6 @@ export function App() {
     }
   }
 
-  async function pullCatalogNow() {
-    setRefreshing(true)
-    try {
-      await refreshProducts()
-      const products = await fetchProducts()
-      if (products.length) {
-        const prices = products.map(product => product.selling_price)
-        setCatalogRange({ min: Math.min(...prices), max: Math.max(...prices) })
-        setProductNames(products.map(product => product.name))
-        setProducts(products)
-      }
-    } catch (error) {
-      setMessage(error.message)
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
   async function uploadCatalog(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -223,7 +205,6 @@ export function App() {
             <span className="hidden sm:inline">Internal use only</span>
             <span className="h-2 w-2 rounded-full bg-[#5d9c78]" />
             <span>Catalog ready</span>
-            <button type="button" className="pill" disabled={refreshing} onClick={pullCatalogNow}>{refreshing ? 'Pulling...' : 'Pull catalog now'}</button>
             <label className="pill" style={{ cursor: 'pointer' }}>
               Upload catalog
               <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={uploadCatalog} disabled={refreshing} />
