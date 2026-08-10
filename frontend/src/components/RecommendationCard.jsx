@@ -1,5 +1,5 @@
 import { money } from '../lib/format'
-import { matchesAny, matchingCategory } from '../lib/match'
+import { isMandatoryProduct, matchingCategory } from '../lib/match'
 
 const ACCENT = '#bd285c'
 
@@ -20,6 +20,7 @@ function groupByProduct(products) {
 export function RecommendationCard({ recommendation, index, mandatoryProducts, requiredCategories, onToggleCustomization, repricing }) {
   const groupedProducts = groupByProduct(recommendation.products)
   const customizeProducts = recommendation.customizeProducts || []
+  const boxProductNames = recommendation.products.map(product => product.name)
 
   return (
     <article className="card option-card overflow-hidden" style={{ borderLeft: `4px solid ${ACCENT}` }}>
@@ -36,7 +37,7 @@ export function RecommendationCard({ recommendation, index, mandatoryProducts, r
       </div>
       <div className="px-4">
         {groupedProducts.map(({ product, count }) => {
-          const isMandatory = matchesAny(product.name, mandatoryProducts)
+          const isMandatory = isMandatoryProduct(product.name, mandatoryProducts, boxProductNames)
           const matchedCategory = matchingCategory(product, requiredCategories)
           const isCustomized = customizeProducts.includes(product.name)
           return (

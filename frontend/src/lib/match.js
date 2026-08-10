@@ -3,8 +3,21 @@ function matches(value, requested) {
   return value.trim().toLowerCase().includes(requested.trim().toLowerCase())
 }
 
-export function matchesAny(value, list) {
-  return list.some(entry => matches(value, entry))
+// For the "Mandatory" badge specifically: mirrors the
+// backend's exact-match-first preference (recommender_rules.py's
+// _resolve_mandatory / _resolve_mandatory_exemptions) so a Must Include of
+// "Samosa" only badges the exact "Samosa" product, not every other item in
+// the same box whose name happens to contain "Samosa" (e.g. "Baked
+// Vegetable Samosa"). Falls back to a substring match only when no product
+// in this box is an exact match for that Must Include entry.
+export function isMandatoryProduct(productName, mandatoryProducts, boxProductNames) {
+  const target = productName.trim().toLowerCase()
+  return mandatoryProducts.some(wanted => {
+    const needle = wanted.trim().toLowerCase()
+    if (target === needle) return true
+    const hasExactInBox = boxProductNames.some(name => name.trim().toLowerCase() === needle)
+    return !hasExactInBox && matches(productName, wanted)
+  })
 }
 
 function normalize(value) {
