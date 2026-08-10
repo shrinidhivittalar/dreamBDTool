@@ -118,9 +118,10 @@ def test_item_count_exceeds_pool_returns_empty():
 
 def test_total_price_matches_catalog_price_with_no_gst_added():
     catalog = [Product(name="Brownie", selling_price=100)]
-    request = RecommendationRequest(budget_min=90, budget_max=120, item_count=1, mandatory_products=["Brownie"])
+    request = RecommendationRequest(budget_min=90, budget_max=130, item_count=1, mandatory_products=["Brownie"])
     rec = recommend(catalog, request)[0]
-    assert rec.total_price == pytest.approx(100, abs=0.01)
+    # 100 catalog price + flat ₹20 packaging, no GST multiplier anywhere.
+    assert rec.total_price == pytest.approx(120, abs=0.01)
 
 
 def test_sweet_only_filters_to_sweet_products():

@@ -18,7 +18,7 @@ class Product(BaseModel):
     sourcing: str = ""
     # Raw packaging note/cost as read from the catalog (e.g. "Box + tissue +
     # ketchup" / 20) - kept for traceability, but the actual per-box charge
-    # is computed from the flat PACKAGING_SAVORY_COST rule, not summed from
+    # is computed from the flat PACKAGING_COST rule, not summed from
     # these per-row values (some savory rows leave them blank).
     packaging_note: str = ""
     packaging_addon_cost: float | None = None

@@ -108,12 +108,11 @@ MAX_UNIQUE_CATEGORY_GROUPS = 8
 THEMED_CUSTOMISED_PRODUCT_MARKERS = ("theme cupcake",)
 THEMED_CUSTOMISED_CATEGORY_MARKERS = ("customisation",)
 
-# Flat packaging add-on charged once per box whenever the box's packaging
-# requires a Ketchup sachet (i.e. any savory item is present) - see
-# CSV column "Unnamed: 6" (Box + tissue + ketchup, 20) for where this
-# number comes from. Applied via the same any()-per-box rule as
-# business_rules.packaging_requirements(), not summed per savory item.
-PACKAGING_SAVORY_COST = 20.0
+# Flat packaging charge, once per box, regardless of contents - see CSV
+# column "Packaging Price": both "Box + tissue" (sweet/FMCG rows) and
+# "Box + tissue + ketchup" (savory rows) price at 20, so the ketchup
+# sachet is a free addition to the same flat charge, not an upcharge.
+PACKAGING_COST = 20.0
 
 # Exact allowlist of catalog products eligible for the White Chocolate Disc
 # surcharge - the 6 base cupcake flavors, explicitly excluding Theme Cupcake.

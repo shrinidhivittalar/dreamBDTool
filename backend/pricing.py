@@ -2,16 +2,12 @@ from dataclasses import dataclass
 
 try:
     from .models import Product, RecommendationRequest
-    from .recommender_config import PACKAGING_SAVORY_COST
-    from .recommender_rules import _category_match, _normalized_text
+    from .recommender_config import PACKAGING_COST
+    from .recommender_rules import _normalized_text
 except ImportError:
     from models import Product, RecommendationRequest
-    from recommender_config import PACKAGING_SAVORY_COST
-    from recommender_rules import _category_match, _normalized_text
-
-
-def _is_savory(product: Product) -> bool:
-    return _category_match(product, "savory") or _category_match(product, "savoury")
+    from recommender_config import PACKAGING_COST
+    from recommender_rules import _normalized_text
 
 
 @dataclass(frozen=True)
@@ -96,11 +92,11 @@ class PricingEngine:
         return len(matches) * customization_addon.selling_price
 
     def packaging_cost(self, products: list[Product], request: RecommendationRequest | None = None) -> float:
-        # Flat charge, once per box, whenever the box's packaging requires a
-        # Ketchup sachet (i.e. any savory item present) - mirrors the same
-        # any()-per-box rule as business_rules.packaging_requirements(), not
-        # summed per savory item.
-        return PACKAGING_SAVORY_COST if any(_is_savory(product) for product in products) else 0.0
+        # Flat charge, once per box, for any non-empty box - the ketchup
+        # sachet added when a savory item is present (see
+        # business_rules.packaging_requirements()) is a free addition to
+        # this same flat price, not an upcharge.
+        return PACKAGING_COST if products else 0.0
 
     def discount(self, products: list[Product], request: RecommendationRequest | None = None) -> float:
         return 0.0

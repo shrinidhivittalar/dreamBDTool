@@ -15,12 +15,12 @@ def test_pricing_engine_calculates_selling_and_rock_bottom_totals():
     assert engine.rock_bottom_total(products) == 130
 
 
-def test_priced_total_matches_catalog_total():
+def test_priced_total_adds_flat_packaging_to_catalog_total():
     engine = PricingEngine()
     products = [Product(name="Brownie", selling_price=100)]
-    request = RecommendationRequest(budget_min=90, budget_max=120, item_count=1)
+    request = RecommendationRequest(budget_min=90, budget_max=130, item_count=1)
 
-    assert engine.priced_total(products, request) == pytest.approx(100)
+    assert engine.priced_total(products, request) == pytest.approx(120)
 
 
 def test_breakdown_has_future_pricing_rule_hooks():
@@ -33,6 +33,8 @@ def test_breakdown_has_future_pricing_rule_hooks():
     assert breakdown.dad_selling_price == 100
     assert breakdown.rock_bottom_price == 80
     assert breakdown.customization_surcharge == 0
-    assert breakdown.packaging_cost == 0
+    # Packaging is a flat ₹20 charge on any non-empty box, sweet or
+    # savory alike - see PACKAGING_COST.
+    assert breakdown.packaging_cost == 20
     assert breakdown.discount == 0
-    assert breakdown.total_price == pytest.approx(100)
+    assert breakdown.total_price == pytest.approx(120)
