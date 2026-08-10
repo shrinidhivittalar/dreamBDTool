@@ -1,6 +1,6 @@
 import { RecommendationCard } from './RecommendationCard'
 
-export function ResultsPanel({ catalogSize, lastBrief, message, recommendations, onExport, exporting, onToggleCustomization, repricingIndices }) {
+export function ResultsPanel({ catalogSize, lastBrief, loading, message, recommendations, onExport, exporting, onToggleCustomization, repricingIndices }) {
   return (
     <section>
       <div className="mb-3 flex items-end justify-between gap-3">
@@ -9,7 +9,12 @@ export function ResultsPanel({ catalogSize, lastBrief, message, recommendations,
           <h2 className="serif text-[20px]">A few good options</h2>
         </div>
         <div className="flex items-center gap-3">
-          {recommendations.length > 0 && (
+          {loading && (
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-[#a51f50]">
+              <span className="results-spinner" aria-hidden="true" /> Updating your options...
+            </span>
+          )}
+          {!loading && recommendations.length > 0 && (
             <span className="text-xs text-[#8e8179]">{recommendations.length} options, {catalogSize} products checked</span>
           )}
           {recommendations.length > 0 && onExport && (
@@ -35,7 +40,7 @@ export function ResultsPanel({ catalogSize, lastBrief, message, recommendations,
           </div>
         </div>
       ) : (
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className={`grid gap-3 xl:grid-cols-2 ${loading ? 'results-stale' : ''}`}>
           {recommendations.map((recommendation, index) => (
             <RecommendationCard
               key={index}

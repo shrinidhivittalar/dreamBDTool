@@ -248,6 +248,7 @@ export function App() {
           <ResultsPanel
             catalogSize={catalogSize}
             lastBrief={lastBrief}
+            loading={loading}
             message={message}
             recommendations={recommendations}
             onExport={exportCurrent}

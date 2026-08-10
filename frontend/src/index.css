@@ -16,6 +16,9 @@ button, input { font: inherit; }
 .pill:hover { border-color: #bd285c; background: #fff0f4; color: #a51f50; }
 .pill.active { border-color: #bd285c; background: #bd285c; color: #fff; }
 .card { background: #fffdfa; border: 1px solid #e4dcd4; border-radius: 12px; }
+.results-stale { opacity: .45; pointer-events: none; transition: opacity .15s; }
+.results-spinner { width: 12px; height: 12px; border: 2px solid #f3c3d3; border-top-color: #a51f50; border-radius: 50%; animation: results-spin .7s linear infinite; }
+@keyframes results-spin { to { transform: rotate(360deg); } }
 /* UI polish */
 ::selection { background: #f2bfd0; color: #5d1630; }
 button { -webkit-tap-highlight-color: transparent; }
