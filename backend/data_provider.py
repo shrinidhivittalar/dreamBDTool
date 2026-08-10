@@ -85,6 +85,19 @@ class ProductDataProvider:
         self._validation_report: CatalogValidationReport | None = None
 
     def load_initial(self) -> DataSyncStatus:
+        # The cache file holds the most recent known-good catalog - either
+        # a prior Zoho pull or a manual upload - so it takes priority over
+        # the bootstrap fallback paths below. Without this, a fresh restart
+        # would load the old bootstrap CSV first (since it loads
+        # successfully) and never even reach the more current cached data.
+        cache_file = self._cache_file()
+        if cache_file.exists():
+            try:
+                return self.load_cache()
+            except Exception as error:
+                with self._lock:
+                    self._last_error = str(error)
+                    self._last_attempt_at = datetime.now()
         for path in self._initial_paths():
             if not path.exists():
                 continue
@@ -94,8 +107,6 @@ class ProductDataProvider:
                 with self._lock:
                     self._last_error = str(error)
                     self._last_attempt_at = datetime.now()
-        if self.cache_path.exists():
-            return self.load_cache()
         return self.get_status()
 
     def get_products(self) -> list[Product]:
