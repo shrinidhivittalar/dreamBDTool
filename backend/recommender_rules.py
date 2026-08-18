@@ -192,33 +192,55 @@ def _is_explicitly_mandatory(product: Product, mandatory_products: list[str]) ->
     return any(_matches(product.name, wanted) for wanted in mandatory_products)
 
 
+def _generalized_mandatory_pick(products: list[Product], wanted: str) -> list[int]:
+    """Resolve `wanted` against `products` the same way for both mandatory
+    callers below.
+
+    An exact name match wins outright. Otherwise a substring match against
+    a single product wins. A generic dish name like "Brownie" or "Cupcake"
+    legitimately substring-matches several catalog products that are just
+    different flavors/sizes of the same dish (e.g. "Fudgy Walnut brownie",
+    "Red velvet brownie - mini") - previously this was flatly rejected as
+    ambiguous even though the catalog has no product literally named
+    "Brownie". When every substring match shares the same dish type (see
+    _product_type_key), this resolves to one canonical representative - the
+    cheapest match, ties broken by name for determinism - instead of
+    erroring, so a generic term "just works" the same way a BD user typing
+    it expects it to. A substring match spanning genuinely different dish
+    types (not all the same type) is left ambiguous for the caller to
+    handle, since guessing there would likely pick the wrong thing.
+    """
+    needle = wanted.strip().lower()
+    exact = [i for i, product in enumerate(products) if product.name.strip().lower() == needle]
+    if exact:
+        return exact
+    substring = [i for i, product in enumerate(products) if _matches(product.name, wanted)]
+    if len(substring) > 1:
+        type_keys = {_product_type_key(products[i]) for i in substring}
+        if len(type_keys) == 1:
+            best = min(substring, key=lambda i: (products[i].selling_price, products[i].name))
+            return [best]
+    return substring
+
+
 def _resolve_mandatory_exemptions(products: list[Product], mandatory_products: list[str]) -> set[int]:
     """Like _resolve_mandatory, but tolerant: used to exempt the specific
-    catalog items a Must Include entry actually resolves to from the
+    catalog item(s) a Must Include entry actually resolves to from the
     category/vendor/sweet-preference filters in apply_catalog_filters,
     *before* _resolve_mandatory itself runs on the filtered pool.
 
-    Unlike the lenient substring check _is_explicitly_mandatory does, this
-    mirrors _resolve_mandatory's exact-match-first preference so a Must
-    Include of "Samosa" exempts only the product named exactly "Samosa" -
-    not every other catalog item whose name happens to contain the word
-    (e.g. "Baked Vegetable Samosa"), which previously let those unrelated
-    items silently bypass a "Sweet only" filter alongside the one actually
-    requested. If a mandatory name has no exact match, falls back to a
-    substring match only when it's unique - same ambiguity rule
-    _resolve_mandatory enforces, so this never exempts more than
-    _resolve_mandatory would ultimately resolve.
+    Delegates to _generalized_mandatory_pick so a generic term like
+    "cupcake" exempts the exact same single catalog item _resolve_mandatory
+    will end up choosing later, not every cupcake flavor (those unrelated
+    flavors have no reason to bypass, say, a "Sweet only" filter they'd
+    already pass anyway, or a savory-only filter they should stay excluded
+    from).
     """
     exempt: set[int] = set()
     for wanted in mandatory_products:
-        needle = wanted.strip().lower()
-        exact = [i for i, product in enumerate(products) if product.name.strip().lower() == needle]
-        if exact:
-            exempt.update(exact)
-            continue
-        substring = [i for i, product in enumerate(products) if _matches(product.name, wanted)]
-        if len(substring) == 1:
-            exempt.update(substring)
+        matches = _generalized_mandatory_pick(products, wanted)
+        if len(matches) == 1:
+            exempt.update(matches)
     return exempt
 
 
@@ -289,16 +311,18 @@ def _resolve_mandatory(candidates: list[Product], requested: list[str]) -> set[i
     """Resolve each mandatory product name to exactly one catalog index.
 
     Unlike the lenient substring filters used elsewhere, a mandatory
-    product must be unambiguous: it either names one product exactly, or
-    substring-matches exactly one candidate. Anything else is a request
-    error, since silently including zero or several products would break
-    the caller's expectation of "this exact item is in every box."
+    product must be unambiguous: it either names one product exactly,
+    substring-matches exactly one candidate, or - via
+    _generalized_mandatory_pick - is a generic dish name ("Brownie",
+    "Cupcake") whose several substring matches are all the same dish type,
+    which resolves to one canonical representative rather than erroring.
+    Anything else is a request error, since silently including zero or
+    several unrelated products would break the caller's expectation of
+    "this exact item is in every box."
     """
     resolved: set[int] = set()
     for wanted in requested:
-        needle = wanted.strip().lower()
-        exact = [i for i, product in enumerate(candidates) if product.name.strip().lower() == needle]
-        matches = exact if exact else [i for i, product in enumerate(candidates) if _matches(product.name, wanted)]
+        matches = _generalized_mandatory_pick(candidates, wanted)
         if len(matches) != 1:
             if not matches:
                 names = [product.name for product in candidates]

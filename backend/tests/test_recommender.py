@@ -26,14 +26,34 @@ def test_mandatory_present_in_every_result():
         assert any(product.name == "Brownie" for product in rec.products)
 
 
-def test_ambiguous_mandatory_raises():
+def test_ambiguous_mandatory_across_dish_types_raises():
+    # "Choco" here isn't a dish name - it substring-matches a Brownie and a
+    # Cookie, two different dish types, so generalized resolution correctly
+    # refuses to guess rather than picking one.
     catalog = [
-        Product(name="Choco Brownie Deluxe", selling_price=120),
-        Product(name="Nutty Brownie Deluxe", selling_price=150),
+        Product(name="Choco Brownie", selling_price=120),
+        Product(name="Choco Cookie", selling_price=150),
     ]
-    request = RecommendationRequest(budget_min=150, budget_max=250, item_count=1, mandatory_products=["Deluxe"])
+    request = RecommendationRequest(budget_min=150, budget_max=250, item_count=1, mandatory_products=["Choco"])
     with pytest.raises(ValueError):
         recommend(catalog, request)
+
+
+def test_generic_dish_name_resolves_to_cheapest_variant():
+    # "Brownie" isn't itself a catalog product name here, but it substring-
+    # matches several flavors/sizes of the same dish type - a BD user typing
+    # the generic word should still get a working result (the cheapest
+    # matching variant), not an "ambiguous" error.
+    catalog = [
+        Product(name="Choco Brownie", selling_price=150),
+        Product(name="Walnut Brownie", selling_price=120),
+        Product(name="Red Velvet Brownie - mini", selling_price=90),
+    ]
+    request = RecommendationRequest(budget_min=50, budget_max=250, item_count=1, mandatory_products=["Brownie"])
+    recommendations = recommend(catalog, request)
+    assert recommendations
+    for rec in recommendations:
+        assert any(product.name == "Red Velvet Brownie - mini" for product in rec.products)
 
 
 def test_unmatched_mandatory_raises():
