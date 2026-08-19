@@ -242,6 +242,7 @@ export function App() {
             onSet={set}
             onStepChange={setStep}
             onToggleMustIncludeMode={toggleMustIncludeMode}
+            productNames={productNames}
             step={step}
             toggleCategory={toggleCategory}
           />

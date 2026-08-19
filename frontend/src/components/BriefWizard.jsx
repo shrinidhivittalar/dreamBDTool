@@ -20,6 +20,7 @@ export function BriefWizard({
   onSet,
   onStepChange,
   onToggleMustIncludeMode,
+  productNames,
   step,
   toggleCategory,
 }) {
@@ -73,13 +74,14 @@ export function BriefWizard({
           <MustIncludeField
             entries={form.must_include}
             placeholder="e.g. Brownie or Cookie"
+            suggestions={productNames}
             onAdd={onAddMustInclude}
             onRemove={onRemoveMustInclude}
             onToggleMode={onToggleMustIncludeMode}
           />
         </Field>
         <Field label="Exclude (optional)" hint="never include these">
-          <TagField tags={tagsFor(form, 'excluded_products')} placeholder="e.g. Samosa" onAdd={value => onAddTag('excluded_products', value)} onRemove={tag => onRemoveTag('excluded_products', tag)} />
+          <TagField tags={tagsFor(form, 'excluded_products')} placeholder="e.g. Samosa" suggestions={productNames} onAdd={value => onAddTag('excluded_products', value)} onRemove={tag => onRemoveTag('excluded_products', tag)} />
         </Field>
         <label className="checkbox-row"><input type="checkbox" checked={form.include_themed_customised} onChange={e => onSet('include_themed_customised', e.target.checked)} /><span>Include themed or customised items</span></label>
         <Field label={`Number of options: ${form.option_count}`}>
