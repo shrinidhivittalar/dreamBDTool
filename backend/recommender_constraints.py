@@ -15,6 +15,7 @@ try:
         _resolve_mandatory_exemptions,
         _suggest_names,
         _unique_category_groups,
+        mandatory_alternative_count,
     )
 except ImportError:
     from models import Product, RecommendationRequest
@@ -30,6 +31,7 @@ except ImportError:
         _resolve_mandatory_exemptions,
         _suggest_names,
         _unique_category_groups,
+        mandatory_alternative_count,
     )
 
 
@@ -41,11 +43,16 @@ class CandidateContext:
     group_keys: tuple[str, ...]
     quota_counts: tuple[int, ...]
     unique_category_keys: tuple[str, ...]
-    # How many distinct rotations of "which checked categories get folded
-    # into a quota" exist for this request - 1 unless more categories are
-    # checked than there are item slots to guarantee them in, in which case
-    # it equals the number of eligible checked categories. See
-    # build_candidate_context's `category_rotation` param.
+    # How many distinct rotations are worth generating for this request -
+    # the larger of two independent needs: "which checked categories get
+    # folded into a quota" (1 unless more categories are checked than there
+    # are item slots to guarantee them in, in which case it equals the
+    # number of eligible checked categories) and "which same-type
+    # alternative a generic Must Include entry resolves to" (1 unless it has
+    # several, e.g. "Brownie" matching multiple flavors). See
+    # build_candidate_context's `category_rotation`/`mandatory_rotation`
+    # params - both share this one count and the one rotation loop in
+    # recommender.py, each wrapping around via modulo independently.
     category_rotation_count: int = 1
 
 
@@ -136,7 +143,12 @@ def _category_mask(product: Product, category_positions: dict[str, int]) -> int:
     return sum(1 << category_positions[group] for group in _unique_category_groups(product))
 
 
-def build_candidate_context(products: list[Product], request: RecommendationRequest, category_rotation: int = 0) -> CandidateContext:
+def build_candidate_context(
+    products: list[Product],
+    request: RecommendationRequest,
+    category_rotation: int = 0,
+    mandatory_rotation: int | None = None,
+) -> CandidateContext:
     # A direct self-contradiction (the same product named in both Must
     # Include and Exclude) needs to be caught here, before
     # apply_catalog_filters removes it from the pool - otherwise Exclude
@@ -159,7 +171,14 @@ def build_candidate_context(products: list[Product], request: RecommendationRequ
         if conflicting is not None:
             raise ValueError(f"'{mandatory}' is in both Must Include and Exclude - remove it from one of the two.")
     candidates = apply_catalog_filters(products, request)
-    mandatory_indices = _resolve_mandatory(candidates, request.mandatory_products)
+    # Defaults to the same rotation index as category_rotation (not always
+    # 0) so recommender.py's single rotation loop can drive both axes at
+    # once - each successive rotation both offers a different preferred
+    # category a shot at a slot AND cycles a generic Must Include entry
+    # ("Brownie") to a different same-type alternative, instead of needing
+    # two separate nested loops.
+    resolved_mandatory_rotation = category_rotation if mandatory_rotation is None else mandatory_rotation
+    mandatory_indices = _resolve_mandatory(candidates, request.mandatory_products, resolved_mandatory_rotation)
     mandatory_items = [candidates[i] for i in sorted(mandatory_indices)]
     pool = [product for i, product in enumerate(candidates) if i not in mandatory_indices]
 
@@ -253,6 +272,16 @@ def build_candidate_context(products: list[Product], request: RecommendationRequ
         rotated = eligible_preferred[offset:] + eligible_preferred[:offset]
         for key in rotated[:take]:
             category_counts[key] = 1
+    # A generic Must Include entry ("Brownie") with several same-type
+    # alternatives needs its own rotations too, same reasoning as the
+    # preferred-category rotation above - otherwise every returned option
+    # would carry the exact same fixed SKU. Both axes share the single
+    # `category_rotation`/`mandatory_rotation` index (see the call above),
+    # so the count returned here just needs to be the larger of the two -
+    # recommender.py's rotation loop already runs from 0 up to whichever
+    # axis needs more distinct values, and each axis independently wraps
+    # around (via modulo) once the loop outruns its own alternative count.
+    rotation_count = max(rotation_count, mandatory_alternative_count(candidates, request.mandatory_products))
     group_keys = tuple(category_counts.keys())
     quota_counts = tuple(category_counts.values())
     if len(group_keys) > MAX_CATEGORY_GROUPS:

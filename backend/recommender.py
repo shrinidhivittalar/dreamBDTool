@@ -219,7 +219,14 @@ def _generate_scored_combinations(
                 # Keyed on actual product identity (not pool position) so
                 # overlap comparisons stay meaningful even across the
                 # different pools _recommend_any_count builds per item size.
-                Counter(pool_keys),
+                # Includes mandatory_keys too - a generic Must Include entry
+                # ("Brownie") can now resolve to a different flavor per
+                # rotation (see build_candidate_context's mandatory_rotation),
+                # and the diversity selector's per-product repeat cap needs
+                # to see that flavor the same way it sees any other item, or
+                # a fixed-across-all-combos mandatory key would silently
+                # exempt it from ever being spread out or overlap-compared.
+                Counter(pool_keys) + Counter(mandatory_keys),
                 request,
                 customization_addon,
                 type_repeats,

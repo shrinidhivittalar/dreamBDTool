@@ -192,9 +192,9 @@ def _is_explicitly_mandatory(product: Product, mandatory_products: list[str]) ->
     return any(_matches(product.name, wanted) for wanted in mandatory_products)
 
 
-def _generalized_mandatory_pick(products: list[Product], wanted: str) -> list[int]:
-    """Resolve `wanted` against `products` the same way for both mandatory
-    callers below.
+def _generalized_mandatory_alternatives(products: list[Product], wanted: str) -> tuple[list[int], bool]:
+    """Resolve `wanted` against `products` and report whether it's a generic
+    dish name with several interchangeable alternatives.
 
     An exact name match wins outright. Otherwise a substring match against
     a single product wins. A generic dish name like "Brownie" or "Cupcake"
@@ -203,24 +203,41 @@ def _generalized_mandatory_pick(products: list[Product], wanted: str) -> list[in
     "Red velvet brownie - mini") - previously this was flatly rejected as
     ambiguous even though the catalog has no product literally named
     "Brownie". When every substring match shares the same dish type (see
-    _product_type_key), this resolves to one canonical representative - the
-    cheapest match, ties broken by name for determinism - instead of
-    erroring, so a generic term "just works" the same way a BD user typing
-    it expects it to. A substring match spanning genuinely different dish
-    types (not all the same type) is left ambiguous for the caller to
-    handle, since guessing there would likely pick the wrong thing.
+    _product_type_key), all of them are returned, sorted (cheapest first,
+    ties broken by name) - the caller picks one per rotation so different
+    options can vary the flavor instead of always locking the same SKU. A
+    substring match spanning genuinely different dish types (not all the
+    same type) is left ambiguous for the caller to handle, since guessing
+    there would likely pick the wrong thing.
+
+    Returns (matches, is_generic_alternatives) - the bool is True only when
+    `matches` holds several same-type alternatives to rotate across, so
+    callers that want a single stable pick (e.g. filter exemptions, which
+    need every alternative exempted regardless of which one ends up chosen)
+    can tell that case apart from a genuinely ambiguous multi-type match.
     """
     needle = wanted.strip().lower()
     exact = [i for i, product in enumerate(products) if product.name.strip().lower() == needle]
     if exact:
-        return exact
+        return exact, False
     substring = [i for i, product in enumerate(products) if _matches(product.name, wanted)]
     if len(substring) > 1:
         type_keys = {_product_type_key(products[i]) for i in substring}
         if len(type_keys) == 1:
-            best = min(substring, key=lambda i: (products[i].selling_price, products[i].name))
-            return [best]
-    return substring
+            ordered = sorted(substring, key=lambda i: (products[i].selling_price, products[i].name))
+            return ordered, True
+    return substring, False
+
+
+def _generalized_mandatory_pick(products: list[Product], wanted: str) -> list[int]:
+    """Resolve `wanted` to its single canonical representative (see
+    _generalized_mandatory_alternatives) - the cheapest alternative when
+    several same-type ones exist, otherwise whatever it resolved to.
+    """
+    matches, is_generic = _generalized_mandatory_alternatives(products, wanted)
+    if is_generic:
+        return [matches[0]]
+    return matches
 
 
 def _resolve_mandatory_exemptions(products: list[Product], mandatory_products: list[str]) -> set[int]:
@@ -229,17 +246,18 @@ def _resolve_mandatory_exemptions(products: list[Product], mandatory_products: l
     category/vendor/sweet-preference filters in apply_catalog_filters,
     *before* _resolve_mandatory itself runs on the filtered pool.
 
-    Delegates to _generalized_mandatory_pick so a generic term like
-    "cupcake" exempts the exact same single catalog item _resolve_mandatory
-    will end up choosing later, not every cupcake flavor (those unrelated
-    flavors have no reason to bypass, say, a "Sweet only" filter they'd
-    already pass anyway, or a savory-only filter they should stay excluded
-    from).
+    Delegates to _generalized_mandatory_alternatives so a generic term like
+    "cupcake" exempts every same-type flavor _resolve_mandatory might end up
+    choosing for some rotation (not every cupcake flavor unconditionally -
+    only the ones that are genuinely interchangeable alternatives for this
+    Must Include entry; unrelated flavors have no reason to bypass, say, a
+    "Sweet only" filter they'd already pass anyway, or a savory-only filter
+    they should stay excluded from).
     """
     exempt: set[int] = set()
     for wanted in mandatory_products:
-        matches = _generalized_mandatory_pick(products, wanted)
-        if len(matches) == 1:
+        matches, is_generic = _generalized_mandatory_alternatives(products, wanted)
+        if is_generic or len(matches) == 1:
             exempt.update(matches)
     return exempt
 
@@ -307,22 +325,46 @@ def _suggest_names(wanted: str, names: list[str], limit: int = 3, cutoff: float 
     return seen
 
 
-def _resolve_mandatory(candidates: list[Product], requested: list[str]) -> set[int]:
+def mandatory_alternative_count(candidates: list[Product], requested: list[str]) -> int:
+    """How many same-type alternatives the most flexible Must Include entry
+    in `requested` has - 1 if none of them are generic (so nothing to
+    rotate). Used to decide how many rotations are worth generating so
+    different options can vary which flavor of a generic mandatory item
+    ("Brownie") they include.
+    """
+    best = 1
+    for wanted in requested:
+        matches, is_generic = _generalized_mandatory_alternatives(candidates, wanted)
+        if is_generic:
+            best = max(best, len(matches))
+    return best
+
+
+def _resolve_mandatory(candidates: list[Product], requested: list[str], rotation: int = 0) -> set[int]:
     """Resolve each mandatory product name to exactly one catalog index.
 
     Unlike the lenient substring filters used elsewhere, a mandatory
     product must be unambiguous: it either names one product exactly,
     substring-matches exactly one candidate, or - via
-    _generalized_mandatory_pick - is a generic dish name ("Brownie",
-    "Cupcake") whose several substring matches are all the same dish type,
-    which resolves to one canonical representative rather than erroring.
+    _generalized_mandatory_alternatives - is a generic dish name ("Brownie",
+    "Cupcake") whose several substring matches are all the same dish type.
     Anything else is a request error, since silently including zero or
     several unrelated products would break the caller's expectation of
     "this exact item is in every box."
+
+    For the generic case, `rotation` selects which same-type alternative to
+    use (cycling via modulo) instead of always the cheapest one - see
+    mandatory_alternative_count/build_candidate_context, which call this
+    once per rotation so different returned options can carry a different
+    flavor of the same mandatory dish instead of the same fixed SKU every
+    time.
     """
     resolved: set[int] = set()
     for wanted in requested:
-        matches = _generalized_mandatory_pick(candidates, wanted)
+        matches, is_generic = _generalized_mandatory_alternatives(candidates, wanted)
+        if is_generic:
+            resolved.add(matches[rotation % len(matches)])
+            continue
         if len(matches) != 1:
             if not matches:
                 names = [product.name for product in candidates]
