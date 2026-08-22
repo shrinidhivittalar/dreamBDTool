@@ -184,12 +184,25 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
     )
 
 
-def _composition(items: list[HamperItem]) -> HamperCompositionInfo:
+def _composition(
+    items: list[HamperItem],
+    applicable_categories: set[str],
+    is_fallback: bool,
+) -> HamperCompositionInfo:
     counts: dict[str, int] = {}
     for item in items:
         key = item.category or "Uncategorised"
         counts[key] = counts.get(key, 0) + 1
-    return HamperCompositionInfo(category_counts=counts)
+
+    covered = {item.category for item in items if item.category}
+    missing = sorted(applicable_categories - covered)
+    return HamperCompositionInfo(
+        category_counts=counts,
+        applicable_categories=sorted(applicable_categories),
+        missing_categories=missing,
+        is_full_category_coverage=not missing,
+        is_category_fallback=is_fallback,
+    )
 
 
 def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus) -> float:
@@ -235,9 +248,10 @@ def _explanation(
     candidate: _Candidate,
     budget_max: float,
     fit_status: HamperFitStatus,
-    distinct_categories: int,
+    composition: HamperCompositionInfo,
 ) -> list[str]:
     utilisation = (candidate.total_price / budget_max * 100) if budget_max > 0 else 0
+    distinct_categories = len(composition.category_counts)
     lines = [
         f"Rs {candidate.total_price:.2f} / Rs {budget_max:.2f} used ({utilisation:.1f}%)",
         f"{len(candidate.items)} item(s) across {distinct_categories} categor{'y' if distinct_categories == 1 else 'ies'}",
@@ -247,6 +261,15 @@ def _explanation(
     else:
         lines.append("Estimated fit: not calculable (dimensions missing)")
     lines.append("Dimensions verified" if fit_status.fully_verified else "Fit partially unverified - some dimensions were missing")
+
+    total_categories = len(composition.applicable_categories)
+    if total_categories:
+        covered = total_categories - len(composition.missing_categories)
+        status = "Complete" if composition.is_full_category_coverage else "Fallback"
+        line = f"Category coverage: {covered}/{total_categories} - {status}"
+        if composition.missing_categories:
+            line += f" (missing: {', '.join(composition.missing_categories)})"
+        lines.append(line)
     return lines
 
 
@@ -355,8 +378,20 @@ def _select_diverse(
     pool: list[tuple[_Candidate, HamperFitStatus, float]],
     limit: int,
 ) -> list[tuple[_Candidate, HamperFitStatus, float]]:
-    chosen: list[_Candidate] = []
-    container_use_count: dict[str, int] = {}
+    return _select_diverse_continuing(pool, limit, [], {})
+
+
+def _select_diverse_continuing(
+    pool: list[tuple[_Candidate, HamperFitStatus, float]],
+    limit: int,
+    chosen: list[_Candidate],
+    container_use_count: dict[str, int],
+) -> list[tuple[_Candidate, HamperFitStatus, float]]:
+    """Same greedy diversity selection as _select_diverse, but continues
+    from an already-chosen set (used for the category-coverage fallback
+    pass, so container-repeat caps and item-overlap checks stay consistent
+    with what was already picked in the primary pass)."""
+
     picked: list[tuple[_Candidate, HamperFitStatus, float]] = []
 
     for candidate, fit_status, score in pool:
@@ -379,6 +414,14 @@ def recommend_hampers(
     reasons: list[str] = []
     all_candidates: list[tuple[_Candidate, HamperFitStatus, float]] = []
 
+    excluded_names = {_normalized(name) for name in request.excluded_products}
+    eligible_for_categories = [
+        item for item in items
+        if not _matches_any(item, excluded_names)
+        and (not request.preferred_categories or item.category in request.preferred_categories)
+    ]
+    applicable_categories = {item.category for item in eligible_for_categories if item.category}
+
     for container in containers:
         for candidate in _generate_candidates_for_container(container, items, request, reasons):
             fit_status = _fit_status(candidate.container, candidate.items)
@@ -398,33 +441,69 @@ def recommend_hampers(
     ]
     ranked_pool = well_utilised if well_utilised else all_candidates
 
-    picked = _select_diverse(ranked_pool, request.option_count)
+    def covered_categories(candidate: _Candidate) -> set[str]:
+        return {item.category for item in candidate.items if item.category}
+
+    # Primary rule: require all applicable categories to be represented.
+    # Only relax it (falling back to the best partial-coverage options) if
+    # there aren't enough full-coverage results to satisfy option_count -
+    # and that relaxation is recorded explicitly, not silently blended in.
+    if applicable_categories:
+        full_coverage_pool = [
+            entry for entry in ranked_pool
+            if applicable_categories <= covered_categories(entry[0])
+        ]
+    else:
+        full_coverage_pool = ranked_pool
+
+    picked = _select_diverse(full_coverage_pool, request.option_count)
+    full_coverage_count = len(picked)
+
+    if len(picked) < request.option_count:
+        chosen_so_far = [entry[0] for entry in picked]
+        container_counts: dict[str, int] = {}
+        for candidate in chosen_so_far:
+            container_counts[candidate.container.name] = container_counts.get(candidate.container.name, 0) + 1
+
+        remaining_pool = [entry for entry in ranked_pool if entry not in picked]
+        fallback_picked = _select_diverse_continuing(
+            remaining_pool, request.option_count - len(picked), chosen_so_far, container_counts,
+        )
+        picked = picked + fallback_picked
 
     recommendations = []
-    for candidate, fit_status, score in picked:
-        distinct_categories = len({item.category for item in candidate.items if item.category})
+    for index, (candidate, fit_status, score) in enumerate(picked):
+        is_fallback = index >= full_coverage_count
+        composition = _composition(candidate.items, applicable_categories, is_fallback)
         recommendations.append(HamperRecommendation(
             container=candidate.container,
             items=candidate.items,
             total_price=candidate.total_price,
             budget_utilisation=(candidate.total_price / request.budget_max) if request.budget_max else 0,
-            composition=_composition(candidate.items),
+            composition=composition,
             fit_status=fit_status,
             score=score,
-            explanation=_explanation(candidate, request.budget_max, fit_status, distinct_categories),
+            explanation=_explanation(candidate, request.budget_max, fit_status, composition),
         ))
 
-    message = None
+    message_parts: list[str] = []
     if not recommendations:
-        if reasons:
-            message = reasons[0]
-        else:
-            message = "No valid hamper found within the given budget and constraints."
-    elif len(recommendations) < request.option_count:
-        message = (
-            f"Only {len(recommendations)} valid, sufficiently distinct hamper option(s) found "
-            f"(requested {request.option_count})."
+        message_parts.append(
+            reasons[0] if reasons else "No valid hamper found within the given budget and constraints."
         )
+    else:
+        if len(recommendations) < request.option_count:
+            message_parts.append(
+                f"Only {len(recommendations)} valid, sufficiently distinct hamper option(s) found "
+                f"(requested {request.option_count})."
+            )
+        if full_coverage_count < len(recommendations):
+            message_parts.append(
+                f"{full_coverage_count} option(s) cover all applicable categories; "
+                f"{len(recommendations) - full_coverage_count} additional fallback option(s) with "
+                f"partial category coverage included."
+            )
+    message = " ".join(message_parts) or None
 
     return HamperSearchResult(
         recommendations=recommendations,

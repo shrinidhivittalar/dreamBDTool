@@ -59,6 +59,15 @@ class HamperRequest(BaseModel):
 
 class HamperCompositionInfo(BaseModel):
     category_counts: dict[str, int] = Field(default_factory=dict)
+    # Categories present anywhere in the eligible catalog for this request -
+    # the yardstick "full coverage" is measured against.
+    applicable_categories: list[str] = Field(default_factory=list)
+    missing_categories: list[str] = Field(default_factory=list)
+    is_full_category_coverage: bool = True
+    # True when this recommendation was only included because not enough
+    # full-coverage options existed - the BD user should see this distinction
+    # rather than have it silently blended in.
+    is_category_fallback: bool = False
 
 
 class HamperFitStatus(BaseModel):

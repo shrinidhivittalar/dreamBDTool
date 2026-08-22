@@ -263,6 +263,55 @@ def test_missing_dimensions_are_flagged_as_not_fully_verified():
     assert result.recommendations[0].fit_status.fully_verified is False
 
 
+def test_full_category_coverage_is_preferred_over_partial():
+    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    items = [
+        # Full-coverage combo: one item per category, modest budget use.
+        HamperItem(name="Food A", price=100, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch A", price=100, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Gourmet A", price=100, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+        # Partial-coverage combo: two Food items only, higher total spend.
+        HamperItem(name="Food B", price=250, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Food C", price=240, category="Food", length_in=1, breadth_in=1, height_in=1),
+    ]
+    request = HamperRequest(budget_min=1, budget_max=1000, option_count=1)
+
+    result = recommend_hampers([container], items, request)
+
+    assert result.recommendations
+    top = result.recommendations[0]
+    assert top.composition.is_full_category_coverage
+    assert top.composition.is_category_fallback is False
+    assert set(top.composition.applicable_categories) == {"Food", "Merchandise", "Gourmet item"}
+
+
+def test_fallback_options_are_used_and_marked_when_not_enough_full_coverage_exist():
+    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    items = [
+        # Only one way to hit all 3 categories.
+        HamperItem(name="Food A", price=50, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch A", price=50, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Gourmet A", price=50, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+        # Extra Food-only items to allow additional partial-coverage combos.
+        HamperItem(name="Food B", price=60, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Food C", price=70, category="Food", length_in=1, breadth_in=1, height_in=1),
+    ]
+    request = HamperRequest(budget_min=1, budget_max=200, option_count=3)
+
+    result = recommend_hampers([container], items, request)
+
+    full_coverage = [r for r in result.recommendations if r.composition.is_full_category_coverage]
+    fallback = [r for r in result.recommendations if r.composition.is_category_fallback]
+
+    assert len(full_coverage) >= 1
+    assert len(fallback) >= 1
+    for rec in fallback:
+        assert not rec.composition.is_full_category_coverage
+        assert rec.composition.missing_categories
+        assert any("Fallback" in line for line in rec.explanation)
+    assert result.message and "fallback" in result.message.lower()
+
+
 def test_search_scales_to_larger_catalogs_within_a_reasonable_time(benchmark_container=None):
     import time
 

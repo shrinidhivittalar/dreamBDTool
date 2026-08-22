@@ -156,11 +156,16 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
         else:
             primary_packaging = _text(row[columns["primary_packaging"]]) if columns["primary_packaging"] else ""
             secondary_packaging = _text(row[columns["secondary_packaging"]]) if columns["secondary_packaging"] else ""
+            # The sheet's "Category" column only distinguishes container vs
+            # item rows ("Hamper Box" / "Inside item") - it's not a real
+            # product category. The actual category (Food / Merchandise /
+            # Gourmet item) lives in the "Tag" column, so that's what an
+            # item's category is set from.
             items.append(HamperItem(
                 name=name,
                 price=price,
                 rock_bottom_price=rock_bottom,
-                category=category_text,
+                category=tags[0] if tags else category_text,
                 vendor=vendor,
                 tags=tags,
                 length_in=length_in,
