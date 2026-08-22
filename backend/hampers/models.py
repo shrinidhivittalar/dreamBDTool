@@ -99,3 +99,20 @@ class HamperRecommendation(BaseModel):
     # Rs 1,500.00 used (99.8%)" - populated by the recommender, not derived
     # client-side, so the explanation always matches the actual scoring.
     explanation: list[str] = Field(default_factory=list)
+
+
+class HamperSearchResult(BaseModel):
+    """The hamper API's response contract - what recommend_hampers() returns
+    and what /api/hampers/recommendations serves directly, unchanged."""
+
+    recommendations: list[HamperRecommendation]
+    requested_count: int
+    message: str | None = None
+    # Internal per-container rejection reasons (e.g. "must-include item not
+    # found") - useful for debugging/support, not necessarily surfaced
+    # verbatim as the headline message a BD user sees.
+    reasons: list[str] = Field(default_factory=list)
+
+    @property
+    def found_count(self) -> int:
+        return len(self.recommendations)

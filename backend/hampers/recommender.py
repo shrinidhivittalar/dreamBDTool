@@ -9,7 +9,7 @@ etc).
 """
 
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 try:
     from .models import (
@@ -19,6 +19,7 @@ try:
         HamperItem,
         HamperRecommendation,
         HamperRequest,
+        HamperSearchResult,
     )
 except ImportError:
     from models import (
@@ -28,6 +29,7 @@ except ImportError:
         HamperItem,
         HamperRecommendation,
         HamperRequest,
+        HamperSearchResult,
     )
 
 # Conservative usable-capacity factor applied to a container's raw volume -
@@ -97,18 +99,6 @@ class _Candidate:
     container: HamperContainer
     items: list[HamperItem]
     total_price: float
-
-
-@dataclass
-class HamperSearchResult:
-    recommendations: list[HamperRecommendation]
-    requested_count: int
-    message: str | None = None
-    reasons: list[str] = field(default_factory=list)
-
-    @property
-    def found_count(self) -> int:
-        return len(self.recommendations)
 
 
 def _normalized(name: str) -> str:
