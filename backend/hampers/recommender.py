@@ -66,6 +66,21 @@ MIN_CONTENT_TO_CONTAINER_RATIO = 0.15
 # available (see recommend_hampers' fallback pass).
 MIN_BUDGET_UTILISATION = 0.5
 
+# A hamper that occupies less than this share of usable container capacity
+# is scored down (not rejected - some premium hampers legitimately look
+# sparse), so a technically-valid but near-empty-looking box doesn't rank
+# as well as a well-filled one.
+MIN_FILL_RATIO = 0.3
+
+# If one single item accounts for this much of the total item spend, the
+# hamper reads as "one expensive thing plus filler" rather than a balanced
+# selection - scored down, not rejected.
+MAX_SINGLE_ITEM_SHARE = 0.75
+
+# A hamper with 3+ items that are all the same category reads as
+# repetitive/samey even though every item is distinct - scored down.
+MIN_ITEMS_FOR_CATEGORY_CONCENTRATION_PENALTY = 3
+
 # Currency amounts are rounded to paise before any comparison so that
 # repeated float addition (e.g. many 60.72 + 69.84 + ...) can't cause a
 # combination to be spuriously accepted or rejected right at the budget
@@ -138,6 +153,7 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
                 fits=False,
                 container_volume_in3=container.usable_volume_in3,
                 notes=f"'{item.name}' does not fit inside the container in any orientation.",
+                fully_verified=False,
             )
         if individual_fit is None:
             unresolved_individual = True
@@ -148,6 +164,7 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
         return HamperFitStatus(
             fits=True,
             notes="Dimensions missing for container or item(s); fit not verified.",
+            fully_verified=False,
         )
 
     used_volume = sum(volume for volume in item_volumes if volume is not None)
@@ -163,6 +180,7 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
         container_volume_in3=container_volume,
         utilisation_ratio=ratio,
         notes=notes,
+        fully_verified=not unresolved_individual,
     )
 
 
@@ -184,7 +202,52 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
 
     fit_confidence = 3 if fit_status.fits and fit_status.utilisation_ratio is not None else 1
 
-    return utilisation_score + diversity_score + fit_confidence
+    # Anti-bias: penalise a hamper where the item mix reads as "one
+    # expensive thing plus filler" or "a pile of same-category filler",
+    # even if the totals hit the budget target cleanly.
+    composition_penalty = 0.0
+    item_prices = [item.price for item in candidate.items]
+    item_total = sum(item_prices)
+    if item_total > 0 and item_prices:
+        single_item_share = max(item_prices) / item_total
+        if single_item_share > MAX_SINGLE_ITEM_SHARE:
+            composition_penalty += 4
+    if (
+        len(candidate.items) >= MIN_ITEMS_FOR_CATEGORY_CONCENTRATION_PENALTY
+        and distinct_categories <= 1
+    ):
+        composition_penalty += 3
+
+    # Fill-ratio bonus/penalty: a near-empty-looking hamper (well under
+    # MIN_FILL_RATIO of usable capacity) is scored down; a well-filled one
+    # gets a small bonus. This is a soft preference, not a hard rejection -
+    # some premium hampers legitimately have low physical fill.
+    fill_adjustment = 0.0
+    if fit_status.utilisation_ratio is not None:
+        fill_adjustment = min(fit_status.utilisation_ratio, 1.0) * 2
+        if fit_status.utilisation_ratio < MIN_FILL_RATIO:
+            fill_adjustment -= 3
+
+    return utilisation_score + diversity_score + fit_confidence + fill_adjustment - composition_penalty
+
+
+def _explanation(
+    candidate: _Candidate,
+    budget_max: float,
+    fit_status: HamperFitStatus,
+    distinct_categories: int,
+) -> list[str]:
+    utilisation = (candidate.total_price / budget_max * 100) if budget_max > 0 else 0
+    lines = [
+        f"Rs {candidate.total_price:.2f} / Rs {budget_max:.2f} used ({utilisation:.1f}%)",
+        f"{len(candidate.items)} item(s) across {distinct_categories} categor{'y' if distinct_categories == 1 else 'ies'}",
+    ]
+    if fit_status.utilisation_ratio is not None:
+        lines.append(f"Estimated fit: {fit_status.utilisation_ratio * 100:.0f}% of usable container capacity")
+    else:
+        lines.append("Estimated fit: not calculable (dimensions missing)")
+    lines.append("Dimensions verified" if fit_status.fully_verified else "Fit partially unverified - some dimensions were missing")
+    return lines
 
 
 def _candidate_item_sets(candidate: _Candidate) -> frozenset[str]:
@@ -337,8 +400,10 @@ def recommend_hampers(
 
     picked = _select_diverse(ranked_pool, request.option_count)
 
-    recommendations = [
-        HamperRecommendation(
+    recommendations = []
+    for candidate, fit_status, score in picked:
+        distinct_categories = len({item.category for item in candidate.items if item.category})
+        recommendations.append(HamperRecommendation(
             container=candidate.container,
             items=candidate.items,
             total_price=candidate.total_price,
@@ -346,9 +411,8 @@ def recommend_hampers(
             composition=_composition(candidate.items),
             fit_status=fit_status,
             score=score,
-        )
-        for candidate, fit_status, score in picked
-    ]
+            explanation=_explanation(candidate, request.budget_max, fit_status, distinct_categories),
+        ))
 
     message = None
     if not recommendations:

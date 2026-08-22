@@ -191,3 +191,92 @@ def test_no_valid_hamper_returns_empty_list_with_message_not_error():
     assert result.recommendations == []
     assert isinstance(result.message, str)
     assert result.message
+
+
+def test_recommend_hampers_is_deterministic():
+    request = HamperRequest(budget_min=100, budget_max=1500, option_count=5)
+
+    first = recommend_hampers([CONTAINER], ITEMS, request)
+    second = recommend_hampers([CONTAINER], ITEMS, request)
+
+    assert [r.total_price for r in first.recommendations] == [r.total_price for r in second.recommendations]
+    assert (
+        [tuple(sorted(i.name for i in r.items)) for r in first.recommendations]
+        == [tuple(sorted(i.name for i in r.items)) for r in second.recommendations]
+    )
+
+
+def test_single_dominant_item_is_scored_down_vs_balanced_alternative():
+    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    dominant_item = HamperItem(name="Premium Thing", price=900, category="Gourmet", length_in=1, breadth_in=1, height_in=1)
+    filler = HamperItem(name="Filler", price=5, category="Merchandise", length_in=1, breadth_in=1, height_in=1)
+    balanced_items = [
+        HamperItem(name="A", price=300, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="B", price=300, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="C", price=300, category="Gourmet", length_in=1, breadth_in=1, height_in=1),
+    ]
+    request = HamperRequest(budget_min=1, budget_max=1000, option_count=2)
+
+    result = recommend_hampers([container], [dominant_item, filler, *balanced_items], request)
+
+    assert result.recommendations
+    top = result.recommendations[0]
+    assert "Premium Thing" not in {item.name for item in top.items}
+
+
+def test_near_empty_fill_is_scored_lower_than_well_filled():
+    roomy_container = HamperContainer(name="Roomy Box", price=10, length_in=20, breadth_in=20, height_in=20)
+    tiny_item = HamperItem(name="Tiny", price=900, length_in=1, breadth_in=1, height_in=1)
+    filling_items = [
+        HamperItem(name=f"Bulk {i}", price=300, length_in=8, breadth_in=8, height_in=6)
+        for i in range(3)
+    ]
+    request = HamperRequest(budget_min=1, budget_max=1000, option_count=1)
+
+    sparse_only = recommend_hampers([roomy_container], [tiny_item], request)
+    filled = recommend_hampers([roomy_container], filling_items, request)
+
+    assert sparse_only.recommendations
+    assert filled.recommendations
+    assert filled.recommendations[0].score > sparse_only.recommendations[0].score
+
+
+def test_recommendation_includes_explanation_and_verification_flag():
+    request = HamperRequest(budget_min=100, budget_max=1500, option_count=1)
+    result = recommend_hampers([CONTAINER], ITEMS, request)
+
+    assert result.recommendations
+    rec = result.recommendations[0]
+    assert rec.explanation
+    assert any("used" in line for line in rec.explanation)
+    assert rec.fit_status.fully_verified is True
+
+
+def test_missing_dimensions_are_flagged_as_not_fully_verified():
+    container = HamperContainer(name="Box", price=10, length_in=5, breadth_in=5, height_in=5)
+    item_no_dims = HamperItem(name="Mystery Item", price=20)
+    request = HamperRequest(budget_min=1, budget_max=100, option_count=1)
+
+    result = recommend_hampers([container], [item_no_dims], request)
+
+    assert result.recommendations
+    assert result.recommendations[0].fit_status.fully_verified is False
+
+
+def test_search_scales_to_larger_catalogs_within_a_reasonable_time(benchmark_container=None):
+    import time
+
+    container = HamperContainer(name="Big Box", price=100, length_in=100, breadth_in=100, height_in=100)
+    for size in (20, 100, 500):
+        items = [
+            HamperItem(name=f"Item {i}", price=10 + (i % 50), category=f"Cat {i % 5}", length_in=1, breadth_in=1, height_in=1)
+            for i in range(size)
+        ]
+        request = HamperRequest(budget_min=1, budget_max=2000, option_count=5)
+
+        start = time.perf_counter()
+        result = recommend_hampers([container], items, request)
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 5.0, f"search took {elapsed:.2f}s for {size} items"
+        assert result.recommendations

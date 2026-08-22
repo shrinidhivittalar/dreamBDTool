@@ -72,6 +72,10 @@ class HamperFitStatus(BaseModel):
     container_volume_in3: float | None = None
     utilisation_ratio: float | None = None
     notes: str = ""
+    # False whenever any container/item dimension was missing or invalid and
+    # had to be skipped rather than checked - callers must not read fits=True
+    # in that case as a real guarantee, only as "not disproven".
+    fully_verified: bool = True
 
 
 class HamperRecommendation(BaseModel):
@@ -82,3 +86,7 @@ class HamperRecommendation(BaseModel):
     composition: HamperCompositionInfo = Field(default_factory=HamperCompositionInfo)
     fit_status: HamperFitStatus
     score: float = 0
+    # Human-readable reasons a BD user can read directly, e.g. "Rs 1,496.64 /
+    # Rs 1,500.00 used (99.8%)" - populated by the recommender, not derived
+    # client-side, so the explanation always matches the actual scoring.
+    explanation: list[str] = Field(default_factory=list)
