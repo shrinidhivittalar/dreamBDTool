@@ -15,7 +15,15 @@ class HamperContainer(BaseModel):
 
     @property
     def usable_volume_in3(self) -> float | None:
+        # A dimension of exactly 0 (seen in real catalog rows for flat items
+        # like a greeting card, where whoever filled the sheet left height
+        # blank-as-zero instead of leaving it empty) is not a real
+        # measurement - treat it the same as a missing dimension, not as
+        # "this container/item has zero volume", or a downstream fill-%
+        # calculation would silently understate space used.
         if self.length_in is None or self.breadth_in is None or self.height_in is None:
+            return None
+        if self.length_in <= 0 or self.breadth_in <= 0 or self.height_in <= 0:
             return None
         return self.length_in * self.breadth_in * self.height_in
 
@@ -37,7 +45,11 @@ class HamperItem(BaseModel):
 
     @property
     def volume_in3(self) -> float | None:
+        # Same dimension-validity rule as HamperContainer.usable_volume_in3 -
+        # <= 0 is treated as invalid/unmeasured, not as a real zero volume.
         if self.length_in is None or self.breadth_in is None or self.height_in is None:
+            return None
+        if self.length_in <= 0 or self.breadth_in <= 0 or self.height_in <= 0:
             return None
         return self.length_in * self.breadth_in * self.height_in
 
@@ -85,6 +97,11 @@ class HamperFitStatus(BaseModel):
     # had to be skipped rather than checked - callers must not read fits=True
     # in that case as a real guarantee, only as "not disproven".
     fully_verified: bool = True
+    # True when utilisation_ratio was computed while excluding one or more
+    # items whose dimensions were missing/invalid - the ratio is then a
+    # floor, not a precise estimate, and callers must present it as such
+    # (e.g. "at least X%") rather than a bare percentage.
+    fill_estimate_partial: bool = False
 
 
 class HamperRecommendation(BaseModel):

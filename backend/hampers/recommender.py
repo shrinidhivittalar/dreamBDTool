@@ -149,28 +149,46 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
             unresolved_individual = True
 
     container_volume = container.usable_volume_in3
-    item_volumes = [item.volume_in3 for item in items]
-    if container_volume is None or any(volume is None for volume in item_volumes):
+    if container_volume is None:
         return HamperFitStatus(
             fits=True,
-            notes="Dimensions missing for container or item(s); fit not verified.",
+            notes="Container dimensions missing; fit not verified.",
             fully_verified=False,
         )
 
-    used_volume = sum(volume for volume in item_volumes if volume is not None)
+    # An item with a missing/invalid dimension is excluded from the volume
+    # sum rather than treated as contributing zero - HamperItem.volume_in3
+    # already returns None for it (see models.py), so the resulting ratio is
+    # a floor on real usage, never an inflated or falsely-precise number.
+    resolved_volumes = [item.volume_in3 for item in items if item.volume_in3 is not None]
+    excluded_items = any(item.volume_in3 is None for item in items)
+
     usable_volume = container_volume * USABLE_CAPACITY_FACTOR
+    used_volume = sum(resolved_volumes)
     fits = used_volume <= usable_volume
-    ratio = (used_volume / usable_volume) if usable_volume > 0 else None
-    notes = "" if fits else "Estimated item volume exceeds usable container capacity."
-    if fits and unresolved_individual:
+    # If every item's volume was excluded, a "0%" floor would read as a real
+    # measurement rather than "we know nothing" - suppress the ratio instead.
+    ratio = (used_volume / usable_volume) if usable_volume > 0 and resolved_volumes else None
+
+    if not fits:
+        notes = "Estimated item volume exceeds usable container capacity."
+    elif excluded_items and not resolved_volumes:
+        notes = "No items in this hamper have usable dimensions; fit not verified."
+    elif excluded_items:
+        notes = "Fit not fully verified - one or more items have missing/invalid dimensions; the fill estimate below excludes them and is a floor, not a precise figure."
+    elif unresolved_individual:
         notes = "Combined volume fits, but not every item's dimensions could be verified individually."
+    else:
+        notes = ""
+
     return HamperFitStatus(
         fits=fits,
         used_volume_in3=used_volume,
         container_volume_in3=container_volume,
         utilisation_ratio=ratio,
         notes=notes,
-        fully_verified=not unresolved_individual,
+        fully_verified=not (unresolved_individual or excluded_items),
+        fill_estimate_partial=excluded_items,
     )
 
 

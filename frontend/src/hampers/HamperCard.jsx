@@ -92,11 +92,16 @@ export function HamperCard({ recommendation, index }) {
           </div>
         </div>
 
-        {fillPct != null && (
-          <div className="mt-1.5 text-[11px] text-[#9b8d84]">
-            <span className="font-semibold text-[#766b64]">Container space:</span> estimated fill {fillPct}%
-          </div>
-        )}
+        <div className="mt-1.5 text-[11px] text-[#9b8d84]">
+          <span className="font-semibold text-[#766b64]">Container space:</span>{' '}
+          {fillPct == null ? (
+            'cannot be fully estimated'
+          ) : fit_status.fill_estimate_partial ? (
+            <>at least {fillPct}%<span className="text-[10px]"> * excludes items with incomplete dimensions</span></>
+          ) : (
+            `estimated fill ${fillPct}%`
+          )}
+        </div>
 
         <div className="mt-2 flex flex-col gap-1 border-t border-[#eee5dd] pt-2">
           <CategoryCoverage composition={composition} />
