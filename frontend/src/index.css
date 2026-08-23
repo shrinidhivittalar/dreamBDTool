@@ -110,6 +110,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .recap-chip { border: 1px solid #eee5dd; border-radius: 999px; background: #fcf8f3; color: #766b64; padding: 4px 10px; font-size: 11px; font-weight: 600; }
 .summary-card { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 22px; border: 1px solid #eee5dd; border-radius: 10px; background: #fcf8f3; padding: 14px; color: #766b64; font-size: 12px; }
 .summary-card div { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee5dd; padding-bottom: 10px; } .summary-card strong { color: #bd285c; font-size: 15px; }
+.landing-choice-card { display: flex; flex-direction: column; align-items: flex-start; padding: 26px; text-align: left; cursor: pointer; transition: all .18s; }
+.landing-choice-card:hover { border-color: #bd285c; box-shadow: 0 2px 4px #49312610, 0 16px 36px #49312614; transform: translateY(-1px); }
+.landing-choice-icon { font-size: 26px; margin-bottom: 10px; }
+.hamper-status-line { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.hamper-status-icon { flex-shrink: 0; }
+.hamper-status-ok { color: #4c8664; }
+.hamper-status-warn { color: #a5690a; }
+.hamper-status-bad { color: #c0264f; }
 @keyframes wizard-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .summary-card { grid-template-columns: 1fr; } .summary-card div { grid-column: auto; } .segmented-control button { font-size: 11px; } }
 

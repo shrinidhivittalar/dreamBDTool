@@ -5,7 +5,7 @@ import { categories, initialForm } from './config/brief'
 import { exportRecommendations, fetchProducts, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
 import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
-export function App() {
+export function App({ onBackToLanding }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState(initialForm)
   const [recommendations, setRecommendations] = useState([])
@@ -202,6 +202,7 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-3 text-[13px] text-[#766b64]">
+            {onBackToLanding && <button type="button" className="pill" onClick={onBackToLanding}>&larr; Switch flow</button>}
             <span className="hidden sm:inline">Internal use only</span>
             <span className="h-2 w-2 rounded-full bg-[#5d9c78]" />
             <span>Catalog ready</span>

@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
+    from .hampers.api import router as hampers_router
     from .data_provider import data_provider
     from .exporter import content_type_for, export_recommendations, filename_for
     from .intent_parser import parse_intent_response
@@ -25,6 +26,7 @@ try:
     from .recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from .validator import blocking_errors, validate_recommendations
 except ImportError:
+    from hampers.api import router as hampers_router
     from data_provider import data_provider
     from exporter import content_type_for, export_recommendations, filename_for
     from intent_parser import parse_intent_response
@@ -235,6 +237,7 @@ app = FastAPI(title="Dream a Dozen Gift Box Recommendation Tool", lifespan=lifes
 # needed for local development.
 allowed_origins = [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["*"], allow_headers=["*"])
+app.include_router(hampers_router)
 
 
 @app.get("/health")
