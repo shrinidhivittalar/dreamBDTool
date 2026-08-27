@@ -63,19 +63,23 @@ def _assert_result_invariants(result, request: HamperRequest):
         if rec.composition.applicable_categories:
             assert missing == set(rec.composition.applicable_categories) - covered
 
+        # Hard eligibility rule: every returned recommendation must cover
+        # every applicable category - no partial-coverage fallback exists.
+        assert rec.composition.is_full_category_coverage
+        assert not rec.composition.missing_categories
+        if rec.composition.applicable_categories:
+            assert set(rec.composition.applicable_categories) <= covered
+
     # Container reuse cap respected across the whole batch.
     container_counts: dict[str, int] = {}
     for rec in result.recommendations:
         container_counts[rec.container.name] = container_counts.get(rec.container.name, 0) + 1
     assert all(count <= 2 for count in container_counts.values())
 
-    # If fewer options were found than requested, or fallback options were
-    # used, that must be visible in the message - never silent.
+    # If fewer options were found than requested, that must be visible in
+    # the message - never silent.
     if 0 < result.found_count < request.option_count:
         assert result.message
-    fallback_used = any(rec.composition.is_category_fallback for rec in result.recommendations)
-    if fallback_used:
-        assert result.message and "fallback" in result.message.lower()
 
 
 # --- 1. Budget matrix: low / medium / high / awkward boundary values ----
@@ -117,7 +121,7 @@ def test_option_count_variation(catalog, option_count):
 
 # --- 2b. Items-per-box customizer ----------------------------------------
 
-@pytest.mark.parametrize("items_per_box", [1, 2, 3, 4])
+@pytest.mark.parametrize("items_per_box", [3, 4])
 def test_items_per_box_forces_exact_item_count(catalog, items_per_box):
     request = HamperRequest(
         budget_min=1, budget_max=2500, option_count=5, items_per_box=items_per_box,
@@ -128,6 +132,20 @@ def test_items_per_box_forces_exact_item_count(catalog, items_per_box):
     assert result.found_count > 0
     for rec in result.recommendations:
         assert len(rec.items) == items_per_box
+
+
+@pytest.mark.parametrize("items_per_box", [1, 2])
+def test_items_per_box_below_real_catalog_category_count_is_structurally_impossible(catalog, items_per_box):
+    # The real catalog has 3 categories (Food, Merchandise, Gourmet item) -
+    # 1 or 2 items per box can never cover all 3, so this must be reported
+    # as structurally impossible, not silently return zero with no reason.
+    request = HamperRequest(
+        budget_min=1, budget_max=2500, option_count=5, items_per_box=items_per_box,
+    )
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    assert result.recommendations == []
+    assert result.message and "structurally impossible" in result.message
 
 
 def test_items_per_box_none_is_unconstrained(catalog):

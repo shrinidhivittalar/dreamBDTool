@@ -308,7 +308,6 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
 def _composition(
     items: list[HamperItem],
     applicable_categories: set[str],
-    is_fallback: bool,
 ) -> HamperCompositionInfo:
     counts: dict[str, int] = {}
     for item in items:
@@ -322,7 +321,6 @@ def _composition(
         applicable_categories=sorted(applicable_categories),
         missing_categories=missing,
         is_full_category_coverage=not missing,
-        is_category_fallback=is_fallback,
     )
 
 
@@ -587,10 +585,11 @@ def recommend_hampers(
     def covered_categories(candidate: _Candidate) -> set[str]:
         return {item.category for item in candidate.items if item.category}
 
-    # Primary rule: require all applicable categories to be represented.
-    # Only relax it (falling back to the best partial-coverage options) if
-    # there aren't enough full-coverage results to satisfy option_count -
-    # and that relaxation is recorded explicitly, not silently blended in.
+    # Hard eligibility rule: a candidate is not a valid recommendation at all
+    # unless it covers every applicable category. There is no fallback to
+    # partial-coverage candidates - if full coverage can't be achieved, the
+    # engine returns fewer (or zero) recommendations rather than topping up
+    # with ones missing a category.
     if applicable_categories:
         full_coverage_pool = [
             entry for entry in ranked_pool
@@ -600,24 +599,10 @@ def recommend_hampers(
         full_coverage_pool = ranked_pool
 
     picked = _select_diverse(full_coverage_pool, request.option_count)
-    full_coverage_count = len(picked)
-
-    if len(picked) < request.option_count:
-        chosen_so_far = [entry[0] for entry in picked]
-        container_counts: dict[str, int] = {}
-        for candidate in chosen_so_far:
-            container_counts[candidate.container.name] = container_counts.get(candidate.container.name, 0) + 1
-
-        remaining_pool = [entry for entry in ranked_pool if entry not in picked]
-        fallback_picked = _select_diverse_continuing(
-            remaining_pool, request.option_count - len(picked), chosen_so_far, container_counts,
-        )
-        picked = picked + fallback_picked
 
     recommendations = []
-    for index, (candidate, fit_status, score) in enumerate(picked):
-        is_fallback = index >= full_coverage_count
-        composition = _composition(candidate.items, applicable_categories, is_fallback)
+    for candidate, fit_status, score in picked:
+        composition = _composition(candidate.items, applicable_categories)
         recommendations.append(HamperRecommendation(
             container=candidate.container,
             items=candidate.items,
@@ -631,20 +616,26 @@ def recommend_hampers(
 
     message_parts: list[str] = []
     if not recommendations:
-        message_parts.append(
-            reasons[0] if reasons else "No valid hamper found within the given budget and constraints."
-        )
+        if applicable_categories and request.items_per_box is not None and request.items_per_box < len(applicable_categories):
+            message_parts.append(
+                f"Requested {request.items_per_box} item(s) per box, but {len(applicable_categories)} "
+                f"categor{'y' if len(applicable_categories) == 1 else 'ies'} must each be represented - "
+                f"full category coverage is structurally impossible with that item count."
+            )
+        elif applicable_categories and all_candidates:
+            message_parts.append(
+                "No hamper covering every applicable category could be found within the budget and "
+                "other constraints (must-include items, exclusions, or dimension compatibility)."
+            )
+        else:
+            message_parts.append(
+                reasons[0] if reasons else "No valid hamper found within the given budget and constraints."
+            )
     else:
         if len(recommendations) < request.option_count:
             message_parts.append(
-                f"Only {len(recommendations)} valid, sufficiently distinct hamper option(s) found "
-                f"(requested {request.option_count})."
-            )
-        if full_coverage_count < len(recommendations):
-            message_parts.append(
-                f"{full_coverage_count} option(s) cover all applicable categories; "
-                f"{len(recommendations) - full_coverage_count} additional fallback option(s) with "
-                f"partial category coverage included."
+                f"Only {len(recommendations)} valid, sufficiently distinct hamper option(s) covering every "
+                f"applicable category could be found (requested {request.option_count})."
             )
     message = " ".join(message_parts) or None
 

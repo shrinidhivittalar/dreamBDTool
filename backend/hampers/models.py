@@ -83,12 +83,13 @@ class HamperCompositionInfo(BaseModel):
     # Categories present anywhere in the eligible catalog for this request -
     # the yardstick "full coverage" is measured against.
     applicable_categories: list[str] = Field(default_factory=list)
+    # Full category coverage is a hard eligibility requirement (see
+    # recommender.py::recommend_hampers) - every returned recommendation
+    # has missing_categories == [] and is_full_category_coverage == True.
+    # These fields are kept (rather than dropped) so the invariant is
+    # explicit in the response, not just implied by absence.
     missing_categories: list[str] = Field(default_factory=list)
     is_full_category_coverage: bool = True
-    # True when this recommendation was only included because not enough
-    # full-coverage options existed - the BD user should see this distinction
-    # rather than have it silently blended in.
-    is_category_fallback: bool = False
 
 
 class HamperFitStatus(BaseModel):
