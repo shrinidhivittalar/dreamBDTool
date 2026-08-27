@@ -1,7 +1,7 @@
 import pytest
 
 from backend.hampers.models import HamperContainer, HamperFitStatus, HamperItem, HamperRequest
-from backend.hampers.recommender import _Candidate, _score, recommend_hampers
+from backend.hampers.recommender import _Candidate, _generation_orderings, _score, recommend_hampers
 
 # Sized so combos actually used across these tests (Cookie Tin alone, or
 # Cookie Tin + one Merchandise item) clear the 70% hard fill floor - a
@@ -242,6 +242,33 @@ def test_budget_utilisation_now_outweighs_fill_in_scoring():
     score_low_fill_high_budget = _score(low_fill_high_budget, budget_max, fs_low_fill)
 
     assert score_low_fill_high_budget > score_high_fill_low_budget
+
+
+def test_generation_orderings_budget_balanced_target_uses_net_remaining_and_optional_slots():
+    # The budget-balanced ordering's per-item target must be computed from
+    # the budget remaining AFTER mandatory-item cost, divided by the number
+    # of OPTIONAL slots being filled - not the total items_per_box and not
+    # the pre-mandatory budget. Here remaining_budget=300 (already net of
+    # mandatory cost, as the caller computes it) and size=3 optional slots,
+    # so the target is 100/item - "C" (price 100) should sort first.
+    pool = [
+        HamperItem(name="A", price=10, length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="B", price=290, length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="C", price=100, length_in=1, breadth_in=1, height_in=1),
+    ]
+    orderings = _generation_orderings(pool, size=3, remaining_budget=300)
+    catalog_order, price_desc, price_asc, budget_balanced = orderings
+
+    assert [i.name for i in catalog_order] == ["A", "B", "C"]
+    assert [i.name for i in price_desc] == ["B", "C", "A"]
+    assert [i.name for i in price_asc] == ["A", "C", "B"]
+    assert budget_balanced[0].name == "C"
+
+
+def test_generation_orderings_size_zero_does_not_divide_by_zero():
+    pool = [HamperItem(name="A", price=10, length_in=1, breadth_in=1, height_in=1)]
+    orderings = _generation_orderings(pool, size=0, remaining_budget=500)
+    assert len(orderings) == 4
 
 
 def test_single_dominant_item_is_scored_down_vs_balanced_alternative():

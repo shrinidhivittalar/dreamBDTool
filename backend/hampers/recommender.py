@@ -10,6 +10,7 @@ what's intentionally deferred (smarter container selection, etc).
 """
 
 import itertools
+import math
 from dataclasses import dataclass
 
 try:
@@ -448,6 +449,34 @@ def _is_diverse(candidate: _Candidate, chosen: list[_Candidate], container_use_c
     return True
 
 
+def _generation_orderings(
+    optional_pool: list[HamperItem],
+    size: int,
+    remaining_budget: float,
+) -> list[list[HamperItem]]:
+    """Deterministic pool orderings used to sample combinations for one
+    item count, each biased toward a different region of the price
+    spectrum. Catalog row order alone (the only ordering used previously)
+    systematically hid higher-priced valid combinations whenever the true
+    combination count for a size vastly exceeds its generation budget -
+    the first N combinations in catalog order are not remotely
+    representative of what's achievable. All orderings are `sorted()`
+    (stable), so equal-price ties preserve original catalog order -
+    everything here is fully deterministic and reproducible, no randomness.
+    `remaining_budget` must already be net of mandatory-item cost, and
+    `size` is the number of OPTIONAL slots being filled (mandatory items
+    are added separately in the caller) - the per-item target below is
+    remaining_budget / size, not remaining_budget / items_per_box.
+    """
+    target_price = remaining_budget / size if size > 0 else 0.0
+    return [
+        optional_pool,  # catalog order - baseline/diversity, unchanged from before
+        sorted(optional_pool, key=lambda item: -item.price),  # price descending - surfaces high-value combos
+        sorted(optional_pool, key=lambda item: item.price),  # price ascending - supports lower-budget combos
+        sorted(optional_pool, key=lambda item: abs(item.price - target_price)),  # budget-balanced
+    ]
+
+
 def _generate_candidates_for_container(
     container: HamperContainer,
     items: list[HamperItem],
@@ -530,25 +559,56 @@ def _generate_candidates_for_container(
     per_size_budget = max(1, MAX_COMBOS_PER_CONTAINER // len(optional_sizes)) if optional_sizes else 0
 
     for size in optional_sizes:
-        seen_for_size = 0
-        for combo in itertools.combinations(optional_pool, size):
-            seen_for_size += 1
-            if seen_for_size > per_size_budget:
-                break
+        pool_size = len(optional_pool)
+        total_combos_for_size = math.comb(pool_size, size) if size <= pool_size else 0
 
-            combo_total = _round_currency(sum(item.price for item in combo))
-            if combo_total > remaining_budget:
-                continue
+        # Only bother with multiple orderings when the true combination
+        # count actually exceeds this size's budget - otherwise a single
+        # exhaustive pass already sees every possible combo, and running
+        # multiple orderings would just re-examine the same combos.
+        if total_combos_for_size <= per_size_budget:
+            orderings = [optional_pool]
+            strategy_budgets = [per_size_budget]
+        else:
+            orderings = _generation_orderings(optional_pool, size, remaining_budget)
+            # Split this size's fixed budget evenly across strategies, with
+            # any remainder assigned to the earliest strategies - still
+            # fully deterministic, and the total across strategies never
+            # exceeds per_size_budget, so MAX_COMBOS_PER_CONTAINER is not
+            # increased, only redistributed within each size.
+            base_share, remainder = divmod(per_size_budget, len(orderings))
+            strategy_budgets = [
+                base_share + (1 if i < remainder else 0)
+                for i in range(len(orderings))
+            ]
 
-            content_value = mandatory_total + combo_total
-            if content_value < min_content_value:
-                continue
+        seen_item_sets: set[frozenset[int]] = set()
 
-            all_items = mandatory_items + list(combo)
-            total_price = _round_currency(container.price + content_value)
-            if total_price > request.budget_max:
-                continue
-            candidates.append(_Candidate(container=container, items=all_items, total_price=total_price))
+        for pool_ordering, strategy_budget in zip(orderings, strategy_budgets):
+            seen_for_strategy = 0
+            for combo in itertools.combinations(pool_ordering, size):
+                seen_for_strategy += 1
+                if seen_for_strategy > strategy_budget:
+                    break
+
+                combo_key = frozenset(id(item) for item in combo)
+                if combo_key in seen_item_sets:
+                    continue
+                seen_item_sets.add(combo_key)
+
+                combo_total = _round_currency(sum(item.price for item in combo))
+                if combo_total > remaining_budget:
+                    continue
+
+                content_value = mandatory_total + combo_total
+                if content_value < min_content_value:
+                    continue
+
+                all_items = mandatory_items + list(combo)
+                total_price = _round_currency(container.price + content_value)
+                if total_price > request.budget_max:
+                    continue
+                candidates.append(_Candidate(container=container, items=all_items, total_price=total_price))
 
     return candidates
 

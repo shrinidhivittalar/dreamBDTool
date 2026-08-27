@@ -177,6 +177,25 @@ def test_items_per_box_none_actually_generates_5_and_6_item_candidates(catalog):
     assert 6 in sizes_seen
 
 
+def test_generation_ordering_bias_no_longer_hides_high_value_combos(catalog):
+    # Regression pin for a real bug (2026-08-28): a single catalog-row-order
+    # pass over itertools.combinations means the first ~N combos examined
+    # for a given size are not remotely representative once the true combo
+    # count vastly exceeds the per-size budget - so combinations built from
+    # pricier, later-in-the-catalog items were never generated at all, not
+    # legitimately excluded by any rule. At a Rs2000 budget, the top
+    # recommendation for Bougenvilla used to top out around Rs1197 (only
+    # ~60% budget) even though a valid Rs1968+ (98%+) combination exists
+    # and passes every hard rule. Confirmed via direct inspection that the
+    # fix (catalog/price-desc/price-asc/budget-balanced orderings sharing
+    # the fixed per-size budget) actually finds it now.
+    request = HamperRequest(budget_min=1, budget_max=2000, option_count=5, items_per_box=None)
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    assert result.recommendations
+    assert any(rec.budget_utilisation >= 0.9 for rec in result.recommendations)
+
+
 def test_items_per_box_rejects_when_mandatory_alone_exceeds_it(catalog):
     request = HamperRequest(
         budget_min=1,
@@ -301,13 +320,21 @@ def test_snapshot_1500_budget_top_option_favours_budget_utilisation(catalog):
 
 
 def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catalog):
-    # 3 (not 4) unique containers can produce a valid, full-coverage,
-    # >=70%-fill combination at this budget - capped at 3, not padded with
-    # a repeated container. Confirmed deterministic via direct inspection.
+    # All 4 requested unique containers can produce a valid, full-coverage,
+    # >=70%-fill combination at this budget. This rose from 3 (2026-08-28,
+    # single catalog-order generation pass) to 4 after fixing a real
+    # candidate-generation sampling bias: itertools.combinations only ever
+    # examined the first N combos in catalog row order, which for large
+    # item counts is a tiny, unrepresentative fraction of the true space -
+    # so higher-value combos for some containers (e.g. Jaipur palace
+    # variants) were never even generated, not legitimately excluded.
+    # Fixed via multiple deterministic pool orderings (catalog/price-desc/
+    # price-asc/budget-balanced) sharing the same fixed per-size budget.
+    # Confirmed deterministic via direct inspection.
     request = HamperRequest(budget_min=1, budget_max=2500, option_count=4)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 3
+    assert result.found_count == 4
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     assert all(rec.composition.is_full_category_coverage for rec in result.recommendations)
