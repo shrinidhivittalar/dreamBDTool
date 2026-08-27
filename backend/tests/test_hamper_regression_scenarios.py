@@ -115,6 +115,45 @@ def test_option_count_variation(catalog, option_count):
     assert result.found_count > 0
 
 
+# --- 2b. Items-per-box customizer ----------------------------------------
+
+@pytest.mark.parametrize("items_per_box", [1, 2, 3, 4])
+def test_items_per_box_forces_exact_item_count(catalog, items_per_box):
+    request = HamperRequest(
+        budget_min=1, budget_max=2500, option_count=5, items_per_box=items_per_box,
+    )
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    _assert_result_invariants(result, request)
+    assert result.found_count > 0
+    for rec in result.recommendations:
+        assert len(rec.items) == items_per_box
+
+
+def test_items_per_box_none_is_unconstrained(catalog):
+    request = HamperRequest(budget_min=1, budget_max=1500, option_count=5, items_per_box=None)
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    _assert_result_invariants(result, request)
+    assert result.found_count > 0
+    # Without the constraint, item counts are free to vary across options.
+    assert len({len(rec.items) for rec in result.recommendations}) >= 1
+
+
+def test_items_per_box_rejects_when_mandatory_alone_exceeds_it(catalog):
+    request = HamperRequest(
+        budget_min=1,
+        budget_max=2500,
+        option_count=5,
+        items_per_box=1,
+        mandatory_products=["Baked Mathri Hexagon 70g", "Craft Lantern"],
+    )
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    assert result.found_count == 0
+    assert any("exceed the requested" in reason for reason in result.reasons)
+
+
 # --- 3. Mandatory + excluded combined ------------------------------------
 
 def test_mandatory_and_excluded_together(catalog):
@@ -189,13 +228,17 @@ def test_impossible_mandatory_items_alone_exceed_budget(catalog):
 # pinned values in the same commit as the scoring change - don't just
 # delete the assertion.
 
-def test_snapshot_1500_budget_top_option_hits_full_utilisation(catalog):
+def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
+    # Fill-ratio scoring weight was raised on 2026-08-24 per stakeholder
+    # feedback ("container space needs to be fully filled") - the top
+    # option now favours a well-filled container over squeezing out the
+    # last few % of budget, so this asserts fill rather than budget-max.
     request = HamperRequest(budget_min=1, budget_max=1500, option_count=5)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
     assert result.found_count == 5
     top = result.recommendations[0]
-    assert top.budget_utilisation >= 0.99
+    assert top.fit_status.utilisation_ratio >= 0.9
     assert top.total_price <= 1500
 
     # Recommendations are ranked by score (which blends utilisation, fill,

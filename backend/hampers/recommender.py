@@ -1,11 +1,12 @@
 """Basic hamper recommendation engine (Phase 3).
 
-Deliberately simple: bounded combination search per candidate container,
-a conservative volume-ratio fit check (no bin-packing), and a scoring pass
-that rewards high budget utilisation and composition variety. This is a
+Bounded combination search per candidate container, a rule-based physical
+fit check (per-item bounding-box orientation check, plus a dedicated
+row-capacity rule for items generically classified as hexagonal boxes -
+see _is_hexagonal_box / _hexagonal_box_fits), and a scoring pass that
+rewards high budget utilisation and composition variety. This is a
 starting point, not a final optimizer - see PHASE1_HAMPERS.md Phase 5 for
-what's intentionally deferred (real packing, smarter container selection,
-etc).
+what's intentionally deferred (smarter container selection, etc).
 """
 
 import itertools
@@ -31,12 +32,6 @@ except ImportError:
         HamperRequest,
         HamperSearchResult,
     )
-
-# Conservative usable-capacity factor applied to a container's raw volume -
-# accounts for packaging bulk, irregular item shapes, and gaps between items
-# that a pure volume-ratio check can't see. Not a substitute for real
-# packing/arrangement logic (see module docstring).
-USABLE_CAPACITY_FACTOR = 0.75
 
 MIN_ITEMS_PER_HAMPER = 1
 MAX_ITEMS_PER_HAMPER = 6
@@ -89,6 +84,11 @@ MIN_ITEMS_FOR_CATEGORY_CONCENTRATION_PENALTY = 3
 # boundary.
 CURRENCY_DECIMALS = 2
 
+# Packaging-field keyword that generically identifies an item as a
+# hexagonal box, driven entirely by the catalog's Primary/Secondary
+# Packaging columns (see catalog_loader.py) - never by product name.
+HEXAGON_PACKAGING_KEYWORD = "hexagon"
+
 
 def _round_currency(value: float) -> float:
     return round(value, CURRENCY_DECIMALS)
@@ -118,8 +118,11 @@ def _item_dims(entity: HamperContainer | HamperItem) -> tuple[float, float, floa
 
 
 def _item_fits_container_individually(item: HamperItem, container: HamperContainer) -> bool | None:
-    """Checks the item's own footprint against the container's, trying every
-    axis rotation (6 orientations). Returns None (unknown) rather than
+    """Checks the item's own footprint against the container's. Freely
+    rotatable items try every axis rotation (6 orientations). Items flagged
+    `upright_only` (candles, liquids, anything that can't be laid on its
+    side) only try yaw rotations that keep their own height as height -
+    2 orientations instead of 6. Returns None (unknown) rather than
     guessing when dimensions are missing/invalid - callers must treat that
     as "not verified", never as "fits"."""
 
@@ -128,15 +131,103 @@ def _item_fits_container_individually(item: HamperItem, container: HamperContain
     if item_dims is None or container_dims is None:
         return None
 
-    for rotation in itertools.permutations(item_dims):
+    length, breadth, height = item_dims
+    rotations = (
+        [(length, breadth, height), (breadth, length, height)]
+        if getattr(item, "upright_only", False)
+        else list(itertools.permutations(item_dims))
+    )
+    for rotation in rotations:
         if all(dim <= max_dim for dim, max_dim in zip(rotation, container_dims)):
             return True
     return False
 
 
+def _is_hexagonal_box(item: HamperItem) -> bool:
+    """Generic classification driven by the catalog's packaging fields -
+    never by product name. An item is a hexagonal box if either its
+    primary or secondary packaging text mentions "hexagon"."""
+    packaging = f"{item.primary_packaging} {item.secondary_packaging}".lower()
+    return HEXAGON_PACKAGING_KEYWORD in packaging
+
+
+def _hexagonal_box_fits(container: HamperContainer, item: HamperItem) -> bool | None:
+    """Fit check for a generically-classified hexagonal box item, using a
+    fixed orientation mapping (not a rotation search) because a hexagonal
+    box's footprint is not axis-symmetric the way a rectangular carton is:
+
+        hamper.length_in  <-> hexagon.length_in
+        hamper.breadth_in <-> hexagon.height_in
+        hamper.height_in  <-> hexagon.breadth_in
+
+    Returns None (unknown) if either set of dimensions is missing/invalid."""
+    item_dims = _item_dims(item)
+    container_dims = _item_dims(container)
+    if item_dims is None or container_dims is None:
+        return None
+
+    item_length, item_breadth, item_height = item_dims
+    container_length, container_breadth, container_height = container_dims
+    return (
+        item_length <= container_length
+        and item_height <= container_breadth
+        and item_breadth <= container_height
+    )
+
+
+def _individually_fits(item: HamperItem, container: HamperContainer) -> bool | None:
+    """Dispatches to the hexagonal-box rule for items generically
+    classified as hexagonal boxes, and the general bounding-box rotation
+    check for everything else. Single entry point so every caller applies
+    the same rule consistently."""
+    if _is_hexagonal_box(item):
+        return _hexagonal_box_fits(container, item)
+    return _item_fits_container_individually(item, container)
+
+
+def _hexagonal_row_length(item: HamperItem) -> float | None:
+    """The length_in a hexagonal box occupies along the hamper's shared
+    row. Returns None if dimensions are missing/invalid."""
+    item_dims = _item_dims(item)
+    if item_dims is None:
+        return None
+    return item_dims[0]
+
+
 def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFitStatus:
-    unresolved_individual = False
-    for item in items:
+    hexagon_items = [item for item in items if _is_hexagonal_box(item)]
+    other_items = [item for item in items if not _is_hexagonal_box(item)]
+
+    for item in hexagon_items:
+        hex_fit = _hexagonal_box_fits(container, item)
+        if hex_fit is False:
+            return HamperFitStatus(
+                fits=False,
+                container_volume_in3=container.usable_volume_in3,
+                notes=f"'{item.name}' (hexagonal box) does not fit the container's length/breadth/height.",
+                fully_verified=False,
+            )
+
+    if hexagon_items:
+        # Combined-length row check: every hexagonal box in the candidate
+        # shares one row along the hamper's length, so what matters is
+        # their combined length_in, not each item's own individual row
+        # capacity. For identical hexagon lengths this reduces to the same
+        # result as floor(hamper.length_in / hexagon.length_in), but it
+        # also correctly handles a mix of different hexagon lengths.
+        row_lengths = [_hexagonal_row_length(item) for item in hexagon_items]
+        container_length = _item_dims(container)
+        if all(length is not None for length in row_lengths) and container_length is not None:
+            total_row_length = sum(row_lengths)
+            if total_row_length > container_length[0]:
+                return HamperFitStatus(
+                    fits=False,
+                    container_volume_in3=container.usable_volume_in3,
+                    notes="Hexagonal box items' combined length exceeds the container's length.",
+                    fully_verified=True,
+                )
+
+    for item in other_items:
         individual_fit = _item_fits_container_individually(item, container)
         if individual_fit is False:
             return HamperFitStatus(
@@ -145,8 +236,6 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
                 notes=f"'{item.name}' does not fit inside the container in any orientation.",
                 fully_verified=False,
             )
-        if individual_fit is None:
-            unresolved_individual = True
 
     container_volume = container.usable_volume_in3
     if container_volume is None:
@@ -162,33 +251,57 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
     # a floor on real usage, never an inflated or falsely-precise number.
     resolved_volumes = [item.volume_in3 for item in items if item.volume_in3 is not None]
     excluded_items = any(item.volume_in3 is None for item in items)
-
-    usable_volume = container_volume * USABLE_CAPACITY_FACTOR
     used_volume = sum(resolved_volumes)
-    fits = used_volume <= usable_volume
-    # If every item's volume was excluded, a "0%" floor would read as a real
-    # measurement rather than "we know nothing" - suppress the ratio instead.
-    ratio = (used_volume / usable_volume) if usable_volume > 0 and resolved_volumes else None
+    # utilisation_ratio is a fill ESTIMATE for scoring/display only - it does
+    # not gate physical fit (that's the per-item bounding-box check above and
+    # the hexagonal-box row-capacity rule). No 0.75 capacity-factor fudge:
+    # this is raw used volume over raw container volume, nothing more.
+    ratio = (used_volume / container_volume) if container_volume > 0 and resolved_volumes else None
 
-    if not fits:
-        notes = "Estimated item volume exceeds usable container capacity."
-    elif excluded_items and not resolved_volumes:
-        notes = "No items in this hamper have usable dimensions; fit not verified."
-    elif excluded_items:
-        notes = "Fit not fully verified - one or more items have missing/invalid dimensions; the fill estimate below excludes them and is a floor, not a precise figure."
-    elif unresolved_individual:
-        notes = "Combined volume fits, but not every item's dimensions could be verified individually."
-    else:
-        notes = ""
+    # The only volume-based rejection that's a genuine necessary condition
+    # (not an arbitrary threshold): if the items' combined volume alone
+    # exceeds the container's raw volume, no arrangement can possibly exist,
+    # full stop - no need to run the geometric search at all.
+    if used_volume > container_volume:
+        return HamperFitStatus(
+            fits=False,
+            used_volume_in3=used_volume,
+            container_volume_in3=container_volume,
+            utilisation_ratio=ratio,
+            notes="Combined item volume exceeds the container's volume.",
+            fully_verified=not excluded_items,
+            fill_estimate_partial=excluded_items,
+        )
 
+    if excluded_items:
+        # Can't run the geometric search without every item's real
+        # dimensions - fall back to "not verified" rather than asserting a
+        # geometry result that can't actually be checked.
+        notes = (
+            "No items in this hamper have usable dimensions; fit not verified."
+            if not resolved_volumes
+            else "Fit not fully verified - one or more items have missing/invalid dimensions; the fill estimate below excludes them and is a floor, not a precise figure."
+        )
+        return HamperFitStatus(
+            fits=True,
+            used_volume_in3=used_volume,
+            container_volume_in3=container_volume,
+            utilisation_ratio=ratio,
+            notes=notes,
+            fully_verified=False,
+            fill_estimate_partial=True,
+        )
+
+    # All individual per-item checks (bounding-box for regular items,
+    # length/breadth/height + row-capacity for hexagonal boxes) and the
+    # combined-volume check above have passed - the fit is accepted.
     return HamperFitStatus(
-        fits=fits,
+        fits=True,
         used_volume_in3=used_volume,
         container_volume_in3=container_volume,
         utilisation_ratio=ratio,
-        notes=notes,
-        fully_verified=not (unresolved_individual or excluded_items),
-        fill_estimate_partial=excluded_items,
+        notes="",
+        fully_verified=True,
     )
 
 
@@ -241,13 +354,17 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
 
     # Fill-ratio bonus/penalty: a near-empty-looking hamper (well under
     # MIN_FILL_RATIO of usable capacity) is scored down; a well-filled one
-    # gets a small bonus. This is a soft preference, not a hard rejection -
-    # some premium hampers legitimately have low physical fill.
+    # gets a strong bonus. Squared so fill dominates the ranking near 100%
+    # (2026-08-25 stakeholder feedback: "should fill 100%, or at least 98%")
+    # - still a soft preference, not a hard rejection, since some premium
+    # hampers legitimately have low physical fill and shouldn't be excluded
+    # outright.
     fill_adjustment = 0.0
     if fit_status.utilisation_ratio is not None:
-        fill_adjustment = min(fit_status.utilisation_ratio, 1.0) * 2
+        capped_ratio = min(fit_status.utilisation_ratio, 1.0)
+        fill_adjustment = (capped_ratio ** 2) * 30
         if fit_status.utilisation_ratio < MIN_FILL_RATIO:
-            fill_adjustment -= 3
+            fill_adjustment -= 15
 
     return utilisation_score + diversity_score + fit_confidence + fill_adjustment - composition_penalty
 
@@ -268,7 +385,11 @@ def _explanation(
         lines.append(f"Estimated fit: {fit_status.utilisation_ratio * 100:.0f}% of usable container capacity")
     else:
         lines.append("Estimated fit: not calculable (dimensions missing)")
-    lines.append("Dimensions verified" if fit_status.fully_verified else "Fit partially unverified - some dimensions were missing")
+    # "Dimension compatible" (not "fit verified"/"arrangement verified"): the
+    # check behind this is per-item bounding-box/hexagon-row compatibility
+    # plus a combined-volume bound, not a proof that all items simultaneously
+    # arrange inside the container without overlapping - don't overstate it.
+    lines.append("Dimension compatible" if fit_status.fully_verified else "Fit partially unverified - some dimensions were missing")
 
     total_categories = len(composition.applicable_categories)
     if total_categories:
@@ -330,7 +451,7 @@ def _generate_candidates_for_container(
 
     mandatory_items = [item for item in items if _matches_any(item, mandatory_names)]
     for item in mandatory_items:
-        if _item_fits_container_individually(item, container) is False:
+        if _individually_fits(item, container) is False:
             reasons.append(f"Must-include '{item.name}' does not fit in container '{container.name}'.")
             return []
 
@@ -345,7 +466,7 @@ def _generate_candidates_for_container(
         item for item in items
         if not _matches_any(item, mandatory_names) and not _matches_any(item, excluded_names)
         and (not request.preferred_categories or item.category in request.preferred_categories)
-        and _item_fits_container_individually(item, container) is not False
+        and _individually_fits(item, container) is not False
     ]
 
     remaining_budget = request.budget_max - container.price - mandatory_total
@@ -354,8 +475,22 @@ def _generate_candidates_for_container(
     candidates: list[_Candidate] = []
     seen_combos = 0
 
-    max_optional = max(0, MAX_ITEMS_PER_HAMPER - len(mandatory_items))
-    for size in range(0, max_optional + 1):
+    # When the user has requested an exact items-per-box count, that
+    # replaces the engine's own MIN/MAX_ITEMS_PER_HAMPER range - only that
+    # one combo size is considered, not "up to" it.
+    if request.items_per_box is not None:
+        if len(mandatory_items) > request.items_per_box:
+            reasons.append(
+                f"Must-include item(s) for container '{container.name}' exceed the requested "
+                f"{request.items_per_box} item(s) per box."
+            )
+            return []
+        optional_sizes = [request.items_per_box - len(mandatory_items)]
+    else:
+        max_optional = max(0, MAX_ITEMS_PER_HAMPER - len(mandatory_items))
+        optional_sizes = range(0, max_optional + 1)
+
+    for size in optional_sizes:
         if len(mandatory_items) + size < MIN_ITEMS_PER_HAMPER:
             continue
         for combo in itertools.combinations(optional_pool, size):

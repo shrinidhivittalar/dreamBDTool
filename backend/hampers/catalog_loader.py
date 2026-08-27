@@ -29,7 +29,10 @@ COLUMN_ALIASES = {
     "height_in": ["Height (INCH)", "Height"],
     "primary_packaging": ["Primary Packaging"],
     "secondary_packaging": ["Secondary Packaging"],
+    "upright_only": ["Upright Only", "Must Stay Upright", "Orientation"],
 }
+
+TRUE_VALUES = {"y", "yes", "true", "1", "upright", "upright only"}
 
 
 @dataclass(frozen=True)
@@ -156,6 +159,10 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
         else:
             primary_packaging = _text(row[columns["primary_packaging"]]) if columns["primary_packaging"] else ""
             secondary_packaging = _text(row[columns["secondary_packaging"]]) if columns["secondary_packaging"] else ""
+            upright_only = (
+                _text(row[columns["upright_only"]]).strip().lower() in TRUE_VALUES
+                if columns["upright_only"] else False
+            )
             # The sheet's "Category" column only distinguishes container vs
             # item rows ("Hamper Box" / "Inside item") - it's not a real
             # product category. The actual category (Food / Merchandise /
@@ -173,6 +180,7 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
                 height_in=height_in,
                 primary_packaging=primary_packaging,
                 secondary_packaging=secondary_packaging,
+                upright_only=upright_only,
             ))
 
     report = HamperCatalogValidationReport(

@@ -1,7 +1,7 @@
 import { Field } from '../components/Field'
 import { MultiSelect } from '../components/MultiSelect'
 import { TagField } from '../components/TagField'
-import { MAX_HAMPER_OPTION_COUNT, RUPEE, hamperCategories } from '../config/hamper'
+import { MAX_HAMPER_OPTION_COUNT, MAX_ITEMS_PER_BOX, RUPEE, hamperCategories } from '../config/hamper'
 
 export function HamperWizard({
   budgetInvalid,
@@ -45,11 +45,34 @@ export function HamperWizard({
         {budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}
       </Field>
 
-      <Field label="Number of options" hint={`up to ${MAX_HAMPER_OPTION_COUNT}`}>
+      <Field label={`Number of options: ${form.option_count}`} hint={`up to ${MAX_HAMPER_OPTION_COUNT}`}>
         <div className="stepper">
           <button type="button" onClick={() => onSet('option_count', Math.max(1, form.option_count - 1))}>-</button>
           <span>{form.option_count}</span>
           <button type="button" onClick={() => onSet('option_count', Math.min(MAX_HAMPER_OPTION_COUNT, form.option_count + 1))}>+</button>
+        </div>
+      </Field>
+
+      <Field label="Items per box" hint={form.items_per_box == null ? 'no constraint' : `up to ${MAX_ITEMS_PER_BOX}`}>
+        <div className="flex items-center gap-3">
+          <div className="stepper">
+            <button
+              type="button"
+              onClick={() => onSet('items_per_box', form.items_per_box == null ? 1 : Math.max(1, form.items_per_box - 1))}
+            >-</button>
+            <span>{form.items_per_box == null ? 'Any' : form.items_per_box}</span>
+            <button
+              type="button"
+              onClick={() => onSet('items_per_box', form.items_per_box == null ? 1 : Math.min(MAX_ITEMS_PER_BOX, form.items_per_box + 1))}
+            >+</button>
+          </div>
+          {form.items_per_box != null && (
+            <button
+              type="button"
+              className="text-xs font-semibold text-[#a5690a] underline"
+              onClick={() => onSet('items_per_box', null)}
+            >Clear</button>
+          )}
         </div>
       </Field>
 

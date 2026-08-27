@@ -38,6 +38,7 @@ export function HamperFlow() {
       budget_min: form.budget_min,
       budget_max: form.budget_max,
       option_count: form.option_count,
+      items_per_box: form.items_per_box,
       preferred_categories: form.preferred_categories.length === hamperCategories.length ? [] : form.preferred_categories,
       mandatory_products: form.mandatory_products,
       excluded_products: form.excluded_products_list,

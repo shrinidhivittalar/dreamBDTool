@@ -42,6 +42,7 @@ class HamperItem(BaseModel):
     height_in: float | None = None
     primary_packaging: str = ""
     secondary_packaging: str = ""
+    upright_only: bool = False
 
     @property
     def volume_in3(self) -> float | None:
@@ -61,6 +62,14 @@ class HamperRequest(BaseModel):
     preferred_categories: list[str] = Field(default_factory=list)
     mandatory_products: list[str] = Field(default_factory=list)
     excluded_products: list[str] = Field(default_factory=list)
+    # Exact item count each recommended hamper must have (mandatory + optional
+    # items combined). None means "no constraint" - the engine picks whatever
+    # size (within its own MIN/MAX_ITEMS_PER_HAMPER bounds) best fits the
+    # budget, as before. Upper bound (6) mirrors
+    # recommender.py::MAX_ITEMS_PER_HAMPER - kept as a literal here (like
+    # frontend/src/config/hamper.js::MAX_HAMPER_OPTION_COUNT does for
+    # option_count) rather than importing recommender.py into models.py.
+    items_per_box: int | None = Field(default=None, ge=1, le=6)
 
     @model_validator(mode="after")
     def _validate_budget_range(self) -> "HamperRequest":
@@ -83,10 +92,24 @@ class HamperCompositionInfo(BaseModel):
 
 
 class HamperFitStatus(BaseModel):
-    """Conservative, non-bin-packing fit assessment for a candidate
-    container + item selection. Volume-ratio based for v1; architected so
-    a real packing/arrangement algorithm can replace the check later
-    without changing callers."""
+    """Physical fit assessment for a candidate container + item selection.
+    `fits` is determined by rule-based per-item checks (see
+    recommender.py::_individually_fits) plus a combined-volume bound - not
+    a single volume-ratio threshold. Items generically classified as
+    hexagonal boxes (recommender.py::_is_hexagonal_box) use a dedicated
+    orientation + row-capacity rule instead of the general bounding-box
+    check. `utilisation_ratio` remains a volume-based fill estimate for
+    scoring and display only - it does not determine `fits`.
+
+    IMPORTANT - what `fully_verified=True` does NOT mean: it does not prove
+    every item in the hamper can simultaneously occupy the container without
+    overlapping. Each item (or hexagon row) is checked against the
+    container's bounds independently, then their combined volume is bounded
+    against the container's volume - there is no arrangement/packing search.
+    A mixed hamper of several oddly-shaped items can pass every check here
+    and still not physically arrange inside the box. Callers must present
+    this as "dimension compatible", never as "fit verified" or "arrangement
+    verified"."""
 
     fits: bool
     used_volume_in3: float | None = None

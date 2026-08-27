@@ -23,10 +23,16 @@ function CategoryCoverage({ composition }) {
 }
 
 function FitStatus({ fitStatus }) {
-  // Three states, deliberately no ambiguity: verified fits, unverifiable
-  // (dimensions missing - not disproven), and does-not-fit. The engine
-  // rejects does-not-fit candidates before they reach this UI, so that
-  // branch is defensive, not an expected path.
+  // Three states, deliberately no ambiguity: dimension-compatible,
+  // unverifiable (dimensions missing - not disproven), and does-not-fit.
+  // The engine rejects does-not-fit candidates before they reach this UI,
+  // so that branch is defensive, not an expected path.
+  //
+  // "Dimension compatible" (not "fit verified"): each item (or hexagon row)
+  // is checked against the container's bounds independently, then combined
+  // volume is bounded against the container's volume - there is no
+  // arrangement/packing search proving every item simultaneously fits
+  // without overlapping. Don't relabel this as "verified".
   if (!fitStatus.fits) {
     return (
       <div className="hamper-status-line hamper-status-bad">
@@ -46,7 +52,7 @@ function FitStatus({ fitStatus }) {
   return (
     <div className="hamper-status-line hamper-status-ok">
       <span className="hamper-status-icon">✓</span>
-      <span>Fit verified</span>
+      <span>Dimension compatible</span>
     </div>
   )
 }
