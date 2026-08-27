@@ -70,11 +70,9 @@ def _assert_result_invariants(result, request: HamperRequest):
         if rec.composition.applicable_categories:
             assert set(rec.composition.applicable_categories) <= covered
 
-    # Container reuse cap respected across the whole batch.
-    container_counts: dict[str, int] = {}
-    for rec in result.recommendations:
-        container_counts[rec.container.name] = container_counts.get(rec.container.name, 0) + 1
-    assert all(count <= 2 for count in container_counts.values())
+    # Every recommendation in a batch must use a different container.
+    container_names = [rec.container.name for rec in result.recommendations]
+    assert len(container_names) == len(set(container_names))
 
     # If fewer options were found than requested, that must be visible in
     # the message - never silent.
@@ -257,13 +255,16 @@ def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
     # feedback ("container space needs to be fully filled") - the top
     # option now favours a well-filled container over squeezing out the
     # last few % of budget, so this asserts fill rather than budget-max.
-    # Only 4 (not 5) full-coverage combinations at this budget clear the
-    # 70% hard fill floor added later - confirmed deterministic via direct
-    # inspection, not a flaky/partial result.
+    # Only 2 (not 5) unique containers can produce a valid, full-coverage,
+    # >=70%-fill combination at this budget - each recommendation must use
+    # a different container, so this is capped at 2, not padded with a
+    # repeated box. Confirmed deterministic via direct inspection.
     request = HamperRequest(budget_min=1, budget_max=1500, option_count=5)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 4
+    assert result.found_count == 2
+    container_names = [rec.container.name for rec in result.recommendations]
+    assert len(container_names) == len(set(container_names))
     top = result.recommendations[0]
     assert top.fit_status.utilisation_ratio >= 0.9
     assert top.total_price <= 1500
@@ -275,11 +276,16 @@ def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
     assert scores == sorted(scores, reverse=True)
 
 
-def test_snapshot_2500_budget_four_options_all_full_category_coverage(catalog):
+def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catalog):
+    # Only 2 (not 4) unique containers can produce a valid, full-coverage,
+    # >=70%-fill combination at this budget - capped at 2, not padded with
+    # a repeated container. Confirmed deterministic via direct inspection.
     request = HamperRequest(budget_min=1, budget_max=2500, option_count=4)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 4
+    assert result.found_count == 2
+    container_names = [rec.container.name for rec in result.recommendations]
+    assert len(container_names) == len(set(container_names))
     assert all(rec.composition.is_full_category_coverage for rec in result.recommendations)
     assert all(set(rec.composition.applicable_categories) == {"Food", "Merchandise", "Gourmet item"}
                for rec in result.recommendations)

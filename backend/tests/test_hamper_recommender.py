@@ -156,20 +156,26 @@ def test_conflicting_mandatory_and_excluded_gives_a_clear_reason():
     assert "conflict" in result.message.lower()
 
 
-def test_container_is_not_reused_beyond_repeat_cap():
-    big_container = HamperContainer(name="Roomy Box", price=10, length_in=50, breadth_in=50, height_in=50)
-    many_items = [
-        HamperItem(name=f"Item {i}", price=10 + i, length_in=1, breadth_in=1, height_in=1)
-        for i in range(10)
+def test_each_recommendation_uses_a_unique_container():
+    # Every returned recommendation must use a different container - not
+    # just capped at some repeat count. With only 3 unique containers that
+    # can each produce one valid candidate, requesting 5 options must
+    # return at most 3, never reusing a container to make up the numbers.
+    containers = [
+        HamperContainer(name=f"Box {i}", price=10, length_in=1, breadth_in=1, height_in=1.3)
+        for i in range(3)
     ]
-    request = HamperRequest(budget_min=1, budget_max=100, option_count=10)
+    items = [
+        HamperItem(name=f"Item {i}", price=10 + i, length_in=1, breadth_in=1, height_in=1)
+        for i in range(3)
+    ]
+    request = HamperRequest(budget_min=1, budget_max=100, option_count=5)
 
-    result = recommend_hampers([big_container], many_items, request)
+    result = recommend_hampers(containers, items, request)
 
-    container_counts: dict[str, int] = {}
-    for rec in result.recommendations:
-        container_counts[rec.container.name] = container_counts.get(rec.container.name, 0) + 1
-    assert all(count <= 2 for count in container_counts.values())
+    container_names = [rec.container.name for rec in result.recommendations]
+    assert len(container_names) == len(set(container_names))
+    assert len(result.recommendations) <= 3
 
 
 def test_container_eating_most_of_budget_is_deprioritised():

@@ -47,10 +47,11 @@ MAX_COMBOS_PER_CONTAINER = 20_000
 # different just because the box differs.
 DIVERSITY_OVERLAP_THRESHOLD = 0.6
 
-# A given container may not be reused more than this many times across one
-# batch of recommendations, so 5 requested options can't silently collapse
-# into "the same box, five times."
-MAX_CONTAINER_REPEATS = 2
+# Each returned recommendation must use a different container - a repeated
+# box (even with different contents) reduces the variety a BD user sees.
+# If fewer unique containers can produce a valid recommendation than were
+# requested, fewer options are returned rather than reusing one.
+MAX_CONTAINER_REPEATS = 1
 
 # A hamper where the container itself eats most of the budget, leaving only
 # a token amount for actual product, is technically valid but not a good
