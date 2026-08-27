@@ -59,11 +59,6 @@ MAX_CONTAINER_REPEATS = 1
 # fraction of the container's price.
 MIN_CONTENT_TO_CONTAINER_RATIO = 0.15
 
-# Below this budget utilisation, a combination is deprioritised as "leaving
-# too much budget on the table" - it's only surfaced if nothing better is
-# available (see recommend_hampers' fallback pass).
-MIN_BUDGET_UTILISATION = 0.5
-
 # Hard eligibility floor: a hamper whose calculated fill (or, when some
 # item dimensions are missing, the minimum known/floor fill) is below this
 # share of usable container capacity is not returned at all - not scored
@@ -353,8 +348,14 @@ def _composition(
 
 def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus) -> float:
     utilisation = candidate.total_price / budget_max if budget_max > 0 else 0
-    # Reward getting close to the budget cap without exceeding it.
-    utilisation_score = utilisation * 10
+    # Reward getting close to the budget cap without exceeding it. Squared
+    # (like fill below) so the pull toward the cap strengthens as it's
+    # approached, without being a hard 100% requirement - a combination at
+    # 95% budget use still scores close to one at 100%, but meaningfully
+    # ahead of one at 60%. This is now the dominant scoring term: budget
+    # utilisation should generally win the ranking among otherwise-eligible
+    # candidates, with fill acting as a secondary quality factor (see below).
+    utilisation_score = (utilisation ** 2) * 40
 
     distinct_categories = len({item.category for item in candidate.items if item.category})
     diversity_score = distinct_categories * 2
@@ -378,15 +379,18 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
         composition_penalty += 3
 
     # Fill-ratio bonus: candidates below MIN_REQUIRED_FILL_RATIO are already
-    # hard-rejected in _fit_status and never reach scoring, so this only
-    # ranks among candidates that are already >= the required floor (or have
-    # an unknown ratio). Squared so fill still dominates the ranking near
-    # 100% (2026-08-25 stakeholder feedback: "should fill 100%, or at least
-    # 98%") among the eligible pool.
+    # hard-rejected in _fit_status and never reach scoring - every candidate
+    # here already clears the 70% floor. This is now a secondary quality
+    # factor, not the dominant ranking signal: its ceiling is deliberately
+    # smaller than utilisation_score's so budget utilisation wins the
+    # ranking first, with fill only breaking ties/near-ties between
+    # otherwise similar budget usage (2026-08-25 stakeholder feedback:
+    # "should fill 100%, or at least 98%" is now expressed via the 70%
+    # hard floor plus this smaller tiebreaker, not via ranking dominance).
     fill_adjustment = 0.0
     if fit_status.utilisation_ratio is not None:
         capped_ratio = min(fit_status.utilisation_ratio, 1.0)
-        fill_adjustment = (capped_ratio ** 2) * 30
+        fill_adjustment = (capped_ratio ** 2) * 10
 
     return utilisation_score + diversity_score + fit_confidence + fill_adjustment - composition_penalty
 
@@ -495,7 +499,6 @@ def _generate_candidates_for_container(
     min_content_value = container.price * MIN_CONTENT_TO_CONTAINER_RATIO
 
     candidates: list[_Candidate] = []
-    seen_combos = 0
 
     # When the user has requested an exact items-per-box count, that
     # replaces the engine's own MIN/MAX_ITEMS_PER_HAMPER range - only that
@@ -510,14 +513,27 @@ def _generate_candidates_for_container(
         optional_sizes = [request.items_per_box - len(mandatory_items)]
     else:
         max_optional = max(0, MAX_ITEMS_PER_HAMPER - len(mandatory_items))
-        optional_sizes = range(0, max_optional + 1)
+        optional_sizes = [
+            size for size in range(0, max_optional + 1)
+            if len(mandatory_items) + size >= MIN_ITEMS_PER_HAMPER
+        ]
+
+    # Deterministic per-size combo budget: when several item counts are all
+    # allowed (items_per_box is None), MAX_COMBOS_PER_CONTAINER is split
+    # evenly across them up front, rather than spent in ascending-size order
+    # until it runs out. Without this, a large optional pool means size-4
+    # combos alone exceed the whole budget, and sizes 5/6 are never even
+    # attempted - "any item count" silently degenerating into "4 items".
+    # No randomness: each size gets a fixed, equal, deterministic share
+    # (itertools.combinations already enumerates in a fixed lexicographic
+    # order, so which combos are seen within a size's share is reproducible).
+    per_size_budget = max(1, MAX_COMBOS_PER_CONTAINER // len(optional_sizes)) if optional_sizes else 0
 
     for size in optional_sizes:
-        if len(mandatory_items) + size < MIN_ITEMS_PER_HAMPER:
-            continue
+        seen_for_size = 0
         for combo in itertools.combinations(optional_pool, size):
-            seen_combos += 1
-            if seen_combos > MAX_COMBOS_PER_CONTAINER:
+            seen_for_size += 1
+            if seen_for_size > per_size_budget:
                 break
 
             combo_total = _round_currency(sum(item.price for item in combo))
@@ -533,8 +549,6 @@ def _generate_candidates_for_container(
             if total_price > request.budget_max:
                 continue
             candidates.append(_Candidate(container=container, items=all_items, total_price=total_price))
-        if seen_combos > MAX_COMBOS_PER_CONTAINER:
-            break
 
     return candidates
 
@@ -614,16 +628,16 @@ def recommend_hampers(
     else:
         full_coverage_candidates = all_candidates
 
-    # Prefer combinations that make good use of the budget; only fall back
-    # to lower-utilisation ones if nothing better exists, so cheap
-    # combinations don't dominate just because they were found first. This
-    # preference is applied only within the already-eligible (full-coverage)
-    # pool, so it can never surface a partial-coverage candidate.
-    well_utilised = [
-        entry for entry in full_coverage_candidates
-        if request.budget_max <= 0 or entry[0].total_price / request.budget_max >= MIN_BUDGET_UTILISATION
-    ]
-    full_coverage_pool = well_utilised if well_utilised else full_coverage_candidates
+    # Budget utilisation is no longer a separate hard pre-filter here - it's
+    # baked into _score() (the dominant scoring term) instead, so the greedy
+    # diverse-selection below already prefers higher-utilisation candidates
+    # first. A binary "must clear 50% utilisation or be dropped entirely"
+    # gate previously applied here caused a real problem: a container whose
+    # best achievable full-coverage combo landed just under the threshold
+    # (e.g. 48%) was wholly excluded, even when it was a perfectly valid,
+    # decent option and the only way to reach more unique containers -
+    # actively fighting the unique-container requirement below.
+    full_coverage_pool = full_coverage_candidates
 
     picked = _select_diverse(full_coverage_pool, request.option_count)
 

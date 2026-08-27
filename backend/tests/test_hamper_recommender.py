@@ -1,7 +1,7 @@
 import pytest
 
-from backend.hampers.models import HamperContainer, HamperItem, HamperRequest
-from backend.hampers.recommender import recommend_hampers
+from backend.hampers.models import HamperContainer, HamperFitStatus, HamperItem, HamperRequest
+from backend.hampers.recommender import _Candidate, _score, recommend_hampers
 
 # Sized so combos actually used across these tests (Cookie Tin alone, or
 # Cookie Tin + one Merchandise item) clear the 70% hard fill floor - a
@@ -215,6 +215,33 @@ def test_recommend_hampers_is_deterministic():
         [tuple(sorted(i.name for i in r.items)) for r in first.recommendations]
         == [tuple(sorted(i.name for i in r.items)) for r in second.recommendations]
     )
+
+
+def test_budget_utilisation_now_outweighs_fill_in_scoring():
+    # 2026-08-28 rebalance: fill is a secondary tiebreaker (already a 70%
+    # hard floor), budget utilisation is the dominant ranking term. Two
+    # candidates both clearing the fill floor: one with much higher fill
+    # but lower budget use should now score BELOW one with lower fill but
+    # much higher budget use - the reverse of the pre-rebalance weighting.
+    container = HamperContainer(name="Box", price=0, length_in=10, breadth_in=10, height_in=10)
+    high_fill_low_budget = _Candidate(
+        container=container,
+        items=[HamperItem(name="Cheap", price=100, category="Food", length_in=10, breadth_in=10, height_in=9.7)],
+        total_price=100,
+    )
+    low_fill_high_budget = _Candidate(
+        container=container,
+        items=[HamperItem(name="Pricey", price=700, category="Food", length_in=10, breadth_in=10, height_in=7.1)],
+        total_price=700,
+    )
+    budget_max = 1000
+    fs_high_fill = HamperFitStatus(fits=True, utilisation_ratio=0.97, fully_verified=True)
+    fs_low_fill = HamperFitStatus(fits=True, utilisation_ratio=0.71, fully_verified=True)
+
+    score_high_fill_low_budget = _score(high_fill_low_budget, budget_max, fs_high_fill)
+    score_low_fill_high_budget = _score(low_fill_high_budget, budget_max, fs_low_fill)
+
+    assert score_low_fill_high_budget > score_high_fill_low_budget
 
 
 def test_single_dominant_item_is_scored_down_vs_balanced_alternative():

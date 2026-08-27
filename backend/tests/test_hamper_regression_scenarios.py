@@ -156,6 +156,27 @@ def test_items_per_box_none_is_unconstrained(catalog):
     assert len({len(rec.items) for rec in result.recommendations}) >= 1
 
 
+def test_items_per_box_none_actually_generates_5_and_6_item_candidates(catalog):
+    # Regression pin for a real bug (2026-08-28): itertools.combinations was
+    # enumerated in ascending size order against one shared
+    # MAX_COMBOS_PER_CONTAINER budget, so for most real containers the
+    # 4-item combo count alone exceeded the whole budget and sizes 5/6 were
+    # never generated at all - "Any" silently behaved like "4". The fix
+    # splits the combo budget evenly per allowed size up front, so every
+    # size gets a guaranteed, deterministic share.
+    from backend.hampers.recommender import _generate_candidates_for_container
+
+    request = HamperRequest(budget_min=1, budget_max=2500, option_count=5, items_per_box=None)
+    sizes_seen: set[int] = set()
+    for container in catalog.containers:
+        reasons: list[str] = []
+        for candidate in _generate_candidates_for_container(container, catalog.items, request, reasons):
+            sizes_seen.add(len(candidate.items))
+
+    assert 5 in sizes_seen
+    assert 6 in sizes_seen
+
+
 def test_items_per_box_rejects_when_mandatory_alone_exceeds_it(catalog):
     request = HamperRequest(
         budget_min=1,
@@ -250,23 +271,26 @@ def test_impossible_mandatory_items_alone_exceed_budget(catalog):
 # pinned values in the same commit as the scoring change - don't just
 # delete the assertion.
 
-def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
-    # Fill-ratio scoring weight was raised on 2026-08-24 per stakeholder
-    # feedback ("container space needs to be fully filled") - the top
-    # option now favours a well-filled container over squeezing out the
-    # last few % of budget, so this asserts fill rather than budget-max.
-    # Only 2 (not 5) unique containers can produce a valid, full-coverage,
-    # >=70%-fill combination at this budget - each recommendation must use
-    # a different container, so this is capped at 2, not padded with a
-    # repeated box. Confirmed deterministic via direct inspection.
+def test_snapshot_1500_budget_top_option_favours_budget_utilisation(catalog):
+    # Scoring was rebalanced on 2026-08-28 so budget utilisation is the
+    # dominant ranking term and fill (already a 70% hard floor) is only a
+    # secondary tiebreaker - the top option now favours using more of the
+    # budget over maximising fill, the reverse of the old 2026-08-24
+    # weighting this test used to assert. 3 unique containers (not 2) can
+    # now produce a valid, full-coverage, >=70%-fill combination at this
+    # budget - the fixed per-item-count combo generation budget (see
+    # _generate_candidates_for_container) means item counts up to 6 are now
+    # actually considered, surfacing options this catalog always had.
+    # Confirmed deterministic via direct inspection.
     request = HamperRequest(budget_min=1, budget_max=1500, option_count=5)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 2
+    assert result.found_count == 3
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     top = result.recommendations[0]
-    assert top.fit_status.utilisation_ratio >= 0.9
+    assert top.budget_utilisation >= 0.9
+    assert top.fit_status.utilisation_ratio >= 0.70
     assert top.total_price <= 1500
 
     # Recommendations are ranked by score (which blends utilisation, fill,
@@ -277,13 +301,13 @@ def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
 
 
 def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catalog):
-    # Only 2 (not 4) unique containers can produce a valid, full-coverage,
-    # >=70%-fill combination at this budget - capped at 2, not padded with
+    # 3 (not 4) unique containers can produce a valid, full-coverage,
+    # >=70%-fill combination at this budget - capped at 3, not padded with
     # a repeated container. Confirmed deterministic via direct inspection.
     request = HamperRequest(budget_min=1, budget_max=2500, option_count=4)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 2
+    assert result.found_count == 3
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     assert all(rec.composition.is_full_category_coverage for rec in result.recommendations)
