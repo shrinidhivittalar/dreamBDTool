@@ -63,11 +63,13 @@ MIN_CONTENT_TO_CONTAINER_RATIO = 0.15
 # available (see recommend_hampers' fallback pass).
 MIN_BUDGET_UTILISATION = 0.5
 
-# A hamper that occupies less than this share of usable container capacity
-# is scored down (not rejected - some premium hampers legitimately look
-# sparse), so a technically-valid but near-empty-looking box doesn't rank
-# as well as a well-filled one.
-MIN_FILL_RATIO = 0.3
+# Hard eligibility floor: a hamper whose calculated fill (or, when some
+# item dimensions are missing, the minimum known/floor fill) is below this
+# share of usable container capacity is not returned at all - not scored
+# down, rejected outright (see _fit_status). A ratio of None (nothing
+# resolvable at all) is not a "known" fill below the floor, so it is not
+# rejected on this basis alone.
+MIN_REQUIRED_FILL_RATIO = 0.70
 
 # If one single item accounts for this much of the total item spend, the
 # hamper reads as "one expensive thing plus filler" rather than a balanced
@@ -282,6 +284,20 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
             if not resolved_volumes
             else "Fit not fully verified - one or more items have missing/invalid dimensions; the fill estimate below excludes them and is a floor, not a precise figure."
         )
+        if ratio is not None and ratio < MIN_REQUIRED_FILL_RATIO:
+            return HamperFitStatus(
+                fits=False,
+                used_volume_in3=used_volume,
+                container_volume_in3=container_volume,
+                utilisation_ratio=ratio,
+                notes=(
+                    f"Minimum known fill ({ratio * 100:.0f}%, excluding items with missing dimensions) "
+                    f"is below the required {MIN_REQUIRED_FILL_RATIO * 100:.0f}%."
+                ),
+                fully_verified=False,
+                fill_estimate_partial=True,
+            )
+
         return HamperFitStatus(
             fits=True,
             used_volume_in3=used_volume,
@@ -290,6 +306,16 @@ def _fit_status(container: HamperContainer, items: list[HamperItem]) -> HamperFi
             notes=notes,
             fully_verified=False,
             fill_estimate_partial=True,
+        )
+
+    if ratio is not None and ratio < MIN_REQUIRED_FILL_RATIO:
+        return HamperFitStatus(
+            fits=False,
+            used_volume_in3=used_volume,
+            container_volume_in3=container_volume,
+            utilisation_ratio=ratio,
+            notes=f"Calculated fill ({ratio * 100:.0f}%) is below the required {MIN_REQUIRED_FILL_RATIO * 100:.0f}%.",
+            fully_verified=True,
         )
 
     # All individual per-item checks (bounding-box for regular items,
@@ -350,19 +376,16 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
     ):
         composition_penalty += 3
 
-    # Fill-ratio bonus/penalty: a near-empty-looking hamper (well under
-    # MIN_FILL_RATIO of usable capacity) is scored down; a well-filled one
-    # gets a strong bonus. Squared so fill dominates the ranking near 100%
-    # (2026-08-25 stakeholder feedback: "should fill 100%, or at least 98%")
-    # - still a soft preference, not a hard rejection, since some premium
-    # hampers legitimately have low physical fill and shouldn't be excluded
-    # outright.
+    # Fill-ratio bonus: candidates below MIN_REQUIRED_FILL_RATIO are already
+    # hard-rejected in _fit_status and never reach scoring, so this only
+    # ranks among candidates that are already >= the required floor (or have
+    # an unknown ratio). Squared so fill still dominates the ranking near
+    # 100% (2026-08-25 stakeholder feedback: "should fill 100%, or at least
+    # 98%") among the eligible pool.
     fill_adjustment = 0.0
     if fit_status.utilisation_ratio is not None:
         capped_ratio = min(fit_status.utilisation_ratio, 1.0)
         fill_adjustment = (capped_ratio ** 2) * 30
-        if fit_status.utilisation_ratio < MIN_FILL_RATIO:
-            fill_adjustment -= 15
 
     return utilisation_score + diversity_score + fit_confidence + fill_adjustment - composition_penalty
 
@@ -573,30 +596,33 @@ def recommend_hampers(
 
     all_candidates.sort(key=lambda entry: entry[2], reverse=True)
 
-    # Prefer combinations that make good use of the budget; only fall back
-    # to lower-utilisation ones if nothing better exists, so cheap
-    # combinations don't dominate just because they were found first.
-    well_utilised = [
-        entry for entry in all_candidates
-        if request.budget_max <= 0 or entry[0].total_price / request.budget_max >= MIN_BUDGET_UTILISATION
-    ]
-    ranked_pool = well_utilised if well_utilised else all_candidates
-
     def covered_categories(candidate: _Candidate) -> set[str]:
         return {item.category for item in candidate.items if item.category}
 
     # Hard eligibility rule: a candidate is not a valid recommendation at all
-    # unless it covers every applicable category. There is no fallback to
-    # partial-coverage candidates - if full coverage can't be achieved, the
-    # engine returns fewer (or zero) recommendations rather than topping up
-    # with ones missing a category.
+    # unless it covers every applicable category. This must be applied
+    # before the budget-utilisation preference below, not after - otherwise
+    # a full-coverage candidate could be silently excluded just because
+    # some higher-utilisation, partial-coverage candidate exists, even
+    # though partial coverage is supposed to never be returned at all.
     if applicable_categories:
-        full_coverage_pool = [
-            entry for entry in ranked_pool
+        full_coverage_candidates = [
+            entry for entry in all_candidates
             if applicable_categories <= covered_categories(entry[0])
         ]
     else:
-        full_coverage_pool = ranked_pool
+        full_coverage_candidates = all_candidates
+
+    # Prefer combinations that make good use of the budget; only fall back
+    # to lower-utilisation ones if nothing better exists, so cheap
+    # combinations don't dominate just because they were found first. This
+    # preference is applied only within the already-eligible (full-coverage)
+    # pool, so it can never surface a partial-coverage candidate.
+    well_utilised = [
+        entry for entry in full_coverage_candidates
+        if request.budget_max <= 0 or entry[0].total_price / request.budget_max >= MIN_BUDGET_UTILISATION
+    ]
+    full_coverage_pool = well_utilised if well_utilised else full_coverage_candidates
 
     picked = _select_diverse(full_coverage_pool, request.option_count)
 

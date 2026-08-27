@@ -175,6 +175,12 @@ def test_items_per_box_rejects_when_mandatory_alone_exceeds_it(catalog):
 # --- 3. Mandatory + excluded combined ------------------------------------
 
 def test_mandatory_and_excluded_together(catalog):
+    # Against the real catalog, every container the mandatory tin physically
+    # fits in tops out around ~56% fill for this combination - below the
+    # 70% hard floor (MIN_REQUIRED_FILL_RATIO) - so this now legitimately
+    # returns zero recommendations rather than some. This pins that as
+    # expected, not a regression: confirmed via direct inspection that no
+    # candidate across any valid container reaches 0.70.
     request = HamperRequest(
         budget_min=1,
         budget_max=1500,
@@ -185,7 +191,7 @@ def test_mandatory_and_excluded_together(catalog):
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
     _assert_result_invariants(result, request)
-    assert result.found_count > 0
+    assert result.found_count == 0
 
 
 def test_multiple_mandatory_products_together(catalog):
@@ -251,10 +257,13 @@ def test_snapshot_1500_budget_top_option_favours_container_fill(catalog):
     # feedback ("container space needs to be fully filled") - the top
     # option now favours a well-filled container over squeezing out the
     # last few % of budget, so this asserts fill rather than budget-max.
+    # Only 4 (not 5) full-coverage combinations at this budget clear the
+    # 70% hard fill floor added later - confirmed deterministic via direct
+    # inspection, not a flaky/partial result.
     request = HamperRequest(budget_min=1, budget_max=1500, option_count=5)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 5
+    assert result.found_count == 4
     top = result.recommendations[0]
     assert top.fit_status.utilisation_ratio >= 0.9
     assert top.total_price <= 1500

@@ -3,7 +3,12 @@ import pytest
 from backend.hampers.models import HamperContainer, HamperItem, HamperRequest
 from backend.hampers.recommender import recommend_hampers
 
-CONTAINER = HamperContainer(name="Small Box", price=100, length_in=10, breadth_in=10, height_in=5)
+# Sized so combos actually used across these tests (Cookie Tin alone, or
+# Cookie Tin + one Merchandise item) clear the 70% hard fill floor - a
+# container this closely matched to item volume is unrealistic for real
+# catalog data, but these tests are about budget/mandatory/exclusion logic,
+# not fill, so the fixture just needs to not accidentally fail the floor.
+CONTAINER = HamperContainer(name="Small Box", price=100, length_in=2, breadth_in=2, height_in=2.5)
 
 ITEMS = [
     HamperItem(name="Cookie Tin", price=200, category="Food", length_in=2, breadth_in=2, height_in=2),
@@ -58,7 +63,7 @@ def test_recommend_hampers_rejects_oversized_combo_on_fit():
 
 
 def test_exact_budget_match_is_accepted():
-    container = HamperContainer(name="Exact Box", price=100, length_in=20, breadth_in=20, height_in=20)
+    container = HamperContainer(name="Exact Box", price=100, length_in=1, breadth_in=1, height_in=1.3)
     items = [HamperItem(name="Only Item", price=50, length_in=1, breadth_in=1, height_in=1)]
     request = HamperRequest(budget_min=1, budget_max=150, option_count=1)
 
@@ -91,7 +96,7 @@ def test_individual_item_too_large_is_rejected_even_if_volume_fits():
 
 
 def test_item_fits_via_rotation():
-    container = HamperContainer(name="Box", price=10, length_in=3, breadth_in=10, height_in=4)
+    container = HamperContainer(name="Box", price=10, length_in=3, breadth_in=10, height_in=2.5)
     rotated_item = HamperItem(name="Bar", price=20, length_in=10, breadth_in=3, height_in=2)
     request = HamperRequest(budget_min=1, budget_max=100, option_count=3)
 
@@ -168,8 +173,8 @@ def test_container_is_not_reused_beyond_repeat_cap():
 
 
 def test_container_eating_most_of_budget_is_deprioritised():
-    expensive_container = HamperContainer(name="Pricey Box", price=990, length_in=50, breadth_in=50, height_in=50)
-    cheap_container = HamperContainer(name="Reasonable Box", price=100, length_in=50, breadth_in=50, height_in=50)
+    expensive_container = HamperContainer(name="Pricey Box", price=990, length_in=1, breadth_in=1, height_in=1.3)
+    cheap_container = HamperContainer(name="Reasonable Box", price=100, length_in=1, breadth_in=1, height_in=1.3)
     filler_item = HamperItem(name="Filler", price=5, length_in=1, breadth_in=1, height_in=1)
     good_item = HamperItem(name="Good Item", price=800, length_in=1, breadth_in=1, height_in=1)
     request = HamperRequest(budget_min=1, budget_max=1000, option_count=1)
@@ -207,7 +212,7 @@ def test_recommend_hampers_is_deterministic():
 
 
 def test_single_dominant_item_is_scored_down_vs_balanced_alternative():
-    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    container = HamperContainer(name="Box", price=10, length_in=1.5, breadth_in=1.5, height_in=1.5)
     dominant_item = HamperItem(name="Premium Thing", price=900, category="Gourmet", length_in=1, breadth_in=1, height_in=1)
     filler = HamperItem(name="Filler", price=5, category="Merchandise", length_in=1, breadth_in=1, height_in=1)
     balanced_items = [
@@ -224,21 +229,21 @@ def test_single_dominant_item_is_scored_down_vs_balanced_alternative():
     assert "Premium Thing" not in {item.name for item in top.items}
 
 
-def test_near_empty_fill_is_scored_lower_than_well_filled():
-    roomy_container = HamperContainer(name="Roomy Box", price=10, length_in=20, breadth_in=20, height_in=20)
+def test_near_empty_fill_is_hard_rejected_not_just_scored_lower():
+    # Fill below MIN_REQUIRED_FILL_RATIO (0.70) is a hard eligibility floor,
+    # not a soft scoring penalty - a near-empty-looking hamper must not be
+    # returned at all, regardless of how good everything else about it is.
+    container = HamperContainer(name="Box", price=10, length_in=8.5, breadth_in=8.5, height_in=6.5)
     tiny_item = HamperItem(name="Tiny", price=900, length_in=1, breadth_in=1, height_in=1)
-    filling_items = [
-        HamperItem(name=f"Bulk {i}", price=300, length_in=8, breadth_in=8, height_in=6)
-        for i in range(3)
-    ]
+    bulk_item = HamperItem(name="Bulk", price=300, length_in=8, breadth_in=8, height_in=6)
     request = HamperRequest(budget_min=1, budget_max=1000, option_count=1)
 
-    sparse_only = recommend_hampers([roomy_container], [tiny_item], request)
-    filled = recommend_hampers([roomy_container], filling_items, request)
+    sparse_only = recommend_hampers([container], [tiny_item], request)
+    filled = recommend_hampers([container], [bulk_item], request)
 
-    assert sparse_only.recommendations
+    assert sparse_only.recommendations == []
     assert filled.recommendations
-    assert filled.recommendations[0].score > sparse_only.recommendations[0].score
+    assert filled.recommendations[0].fit_status.utilisation_ratio >= 0.70
 
 
 def test_recommendation_includes_explanation_and_verification_flag():
@@ -264,7 +269,7 @@ def test_missing_dimensions_are_flagged_as_not_fully_verified():
 
 
 def test_full_category_coverage_is_preferred_over_partial():
-    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    container = HamperContainer(name="Box", price=10, length_in=1.5, breadth_in=1.5, height_in=1.5)
     items = [
         # Full-coverage combo: one item per category, modest budget use.
         HamperItem(name="Food A", price=100, category="Food", length_in=1, breadth_in=1, height_in=1),
@@ -285,7 +290,7 @@ def test_full_category_coverage_is_preferred_over_partial():
 
 
 def test_partial_coverage_options_are_never_returned_when_not_enough_full_coverage_exist():
-    container = HamperContainer(name="Box", price=10, length_in=50, breadth_in=50, height_in=50)
+    container = HamperContainer(name="Box", price=10, length_in=1.5, breadth_in=1.5, height_in=1.5)
     items = [
         # Only one way to hit all 3 categories.
         HamperItem(name="Food A", price=50, category="Food", length_in=1, breadth_in=1, height_in=1),
@@ -350,7 +355,9 @@ def test_sufficient_items_per_box_but_zero_full_coverage_gives_different_reason(
 def test_search_scales_to_larger_catalogs_within_a_reasonable_time(benchmark_container=None):
     import time
 
-    container = HamperContainer(name="Big Box", price=100, length_in=100, breadth_in=100, height_in=100)
+    # Sized to just barely hold ~6 unit-volume items so a full 5-category
+    # combo can clear the 70% hard fill floor for the size==20 case below.
+    container = HamperContainer(name="Big Box", price=100, length_in=2, breadth_in=2, height_in=1.5)
     for size in (20, 100, 500):
         items = [
             HamperItem(name=f"Item {i}", price=10 + (i % 50), category=f"Cat {i % 5}", length_in=1, breadth_in=1, height_in=1)
