@@ -100,4 +100,4 @@ def test_real_catalog_item_categories_are_real_product_categories():
     # container/item type marker - that's the specific bug this guards.
     assert "Inside item" not in categories
     assert "Inside Item" not in categories
-    assert categories == {"Food", "Merchandise", "Gourmet item"}
+    assert categories == {"Food", "Merchandise", "Gourmet item", "Nuts"}

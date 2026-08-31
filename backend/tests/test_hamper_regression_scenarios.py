@@ -132,11 +132,15 @@ def test_items_per_box_forces_exact_item_count(catalog, items_per_box):
         assert len(rec.items) == items_per_box
 
 
-@pytest.mark.parametrize("items_per_box", [1, 2])
+@pytest.mark.parametrize("items_per_box", [1])
 def test_items_per_box_below_real_catalog_category_count_is_structurally_impossible(catalog, items_per_box):
-    # The real catalog has 3 categories (Food, Merchandise, Gourmet item) -
-    # 1 or 2 items per box can never cover all 3, so this must be reported
-    # as structurally impossible, not silently return zero with no reason.
+    # The real catalog has 4 Tag values (Food, Merchandise, Gourmet item,
+    # Nuts), but Gourmet item and Nuts are carved out of the hard "one of
+    # each category" requirement (OPTIONAL_CATEGORIES in recommender.py) per
+    # the 2026-08-31 stakeholder rule "one of each category, and if budget
+    # allows, then nuts" - only Food and Merchandise are hard-required. 1
+    # item per box can never cover both, so this must be reported as
+    # structurally impossible, not silently return zero with no reason.
     request = HamperRequest(
         budget_min=1, budget_max=2500, option_count=5, items_per_box=items_per_box,
     )
@@ -144,6 +148,25 @@ def test_items_per_box_below_real_catalog_category_count_is_structurally_impossi
 
     assert result.recommendations == []
     assert result.message and "structurally impossible" in result.message
+
+
+def test_items_per_box_at_real_catalog_required_category_count_is_not_structurally_impossible(catalog):
+    # 2 items per box can structurally cover the 2 hard-required categories
+    # (Food, Merchandise) even though it's below the total Tag-value count -
+    # this is the behavior change from the "Nuts is optional" rule. Real
+    # containers may still reject 2-item combos on other grounds (the 70%
+    # fill floor, budget), so this only asserts the category-count gate
+    # itself no longer blocks it "structurally impossible" the way 1 item
+    # does.
+    request = HamperRequest(
+        budget_min=1, budget_max=2500, option_count=5, items_per_box=2,
+    )
+    result = recommend_hampers(catalog.containers, catalog.items, request)
+
+    if not result.recommendations:
+        assert result.message and "structurally impossible" not in result.message
+    for rec in result.recommendations:
+        assert rec.composition.is_full_category_coverage
 
 
 def test_items_per_box_none_is_unconstrained(catalog):
@@ -314,9 +337,18 @@ def test_snapshot_1500_budget_top_option_favours_budget_utilisation(catalog):
 
     # Recommendations are ranked by score (which blends utilisation, fill,
     # and composition), not raw price - so only the score ordering is a
-    # guaranteed invariant, not a price ordering.
-    scores = [rec.score for rec in result.recommendations]
-    assert scores == sorted(scores, reverse=True)
+    # guaranteed invariant, not a price ordering. Score is no longer a
+    # *strictly* monotonic ordering by itself (2026-09-01): the Nuts
+    # preference (_rank_key) can place a lower-scored Nuts-inclusive
+    # recommendation above a higher-scored Nuts-free one, when the two are
+    # within NUTS_UTILISATION_TOLERANCE of each other's utilisation - so any
+    # score increase between consecutive recommendations must be explained
+    # by exactly that (earlier has Nuts, later doesn't), never by anything
+    # else.
+    for earlier, later in zip(result.recommendations, result.recommendations[1:]):
+        if earlier.score < later.score:
+            assert "Nuts" in earlier.composition.category_counts
+            assert "Nuts" not in later.composition.category_counts
 
 
 def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catalog):
@@ -338,5 +370,9 @@ def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catal
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     assert all(rec.composition.is_full_category_coverage for rec in result.recommendations)
-    assert all(set(rec.composition.applicable_categories) == {"Food", "Merchandise", "Gourmet item"}
+    # Gourmet item and Nuts are optional (OPTIONAL_CATEGORIES in
+    # recommender.py) - only Food and Merchandise are hard-required, so
+    # that's what composition.applicable_categories (the coverage yardstick)
+    # reports here.
+    assert all(set(rec.composition.applicable_categories) == {"Food", "Merchandise"}
                for rec in result.recommendations)

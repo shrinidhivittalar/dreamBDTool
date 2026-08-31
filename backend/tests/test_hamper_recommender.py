@@ -1,7 +1,15 @@
 import pytest
 
 from backend.hampers.models import HamperContainer, HamperFitStatus, HamperItem, HamperRequest
-from backend.hampers.recommender import _Candidate, _generation_orderings, _score, recommend_hampers
+from backend.hampers.recommender import (
+    NUTS_UTILISATION_TOLERANCE,
+    PREFERRED_OPTIONAL_CATEGORIES,
+    _Candidate,
+    _generation_orderings,
+    _rank_key,
+    _score,
+    recommend_hampers,
+)
 
 # Sized so combos actually used across these tests (Cookie Tin alone, or
 # Cookie Tin + one Merchandise item) clear the 70% hard fill floor - a
@@ -329,12 +337,16 @@ def test_missing_dimensions_are_flagged_as_not_fully_verified():
 
 
 def test_full_category_coverage_is_preferred_over_partial():
+    # "Gift" here is a plain, non-optional synthetic category (unlike the
+    # real catalog's "Nuts"/"Gourmet item", which are carved out of the hard
+    # coverage requirement - see OPTIONAL_CATEGORIES in recommender.py) so
+    # this test still exercises 3-way hard coverage.
     container = HamperContainer(name="Box", price=10, length_in=1.5, breadth_in=1.5, height_in=1.5)
     items = [
         # Full-coverage combo: one item per category, modest budget use.
         HamperItem(name="Food A", price=100, category="Food", length_in=1, breadth_in=1, height_in=1),
         HamperItem(name="Merch A", price=100, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
-        HamperItem(name="Gourmet A", price=100, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Gift A", price=100, category="Gift", length_in=1, breadth_in=1, height_in=1),
         # Partial-coverage combo: two Food items only, higher total spend.
         HamperItem(name="Food B", price=250, category="Food", length_in=1, breadth_in=1, height_in=1),
         HamperItem(name="Food C", price=240, category="Food", length_in=1, breadth_in=1, height_in=1),
@@ -346,7 +358,7 @@ def test_full_category_coverage_is_preferred_over_partial():
     assert result.recommendations
     top = result.recommendations[0]
     assert top.composition.is_full_category_coverage
-    assert set(top.composition.applicable_categories) == {"Food", "Merchandise", "Gourmet item"}
+    assert set(top.composition.applicable_categories) == {"Food", "Merchandise", "Gift"}
 
 
 def test_partial_coverage_options_are_never_returned_when_not_enough_full_coverage_exist():
@@ -355,7 +367,7 @@ def test_partial_coverage_options_are_never_returned_when_not_enough_full_covera
         # Only one way to hit all 3 categories.
         HamperItem(name="Food A", price=50, category="Food", length_in=1, breadth_in=1, height_in=1),
         HamperItem(name="Merch A", price=50, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
-        HamperItem(name="Gourmet A", price=50, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Gift A", price=50, category="Gift", length_in=1, breadth_in=1, height_in=1),
         # Extra Food-only items that would previously have supplied
         # partial-coverage fallback options - they must not appear now.
         HamperItem(name="Food B", price=60, category="Food", length_in=1, breadth_in=1, height_in=1),
@@ -439,3 +451,213 @@ def test_search_scales_to_larger_catalogs_within_a_reasonable_time(benchmark_con
         # one is actually reachable within the cap.
         if size == 20:
             assert result.recommendations
+
+
+def test_nuts_and_gourmet_item_are_optional_not_required_for_full_coverage():
+    # 2026-08-31 stakeholder rule: "one of each category, and if budget
+    # allows, then nuts". Nuts and Gourmet item are carved out of the hard
+    # "one of each category" requirement (OPTIONAL_CATEGORIES in
+    # recommender.py) - only Food and Merchandise remain hard-required here.
+    # The container only has room for 2 unit-volume items, so a candidate
+    # covering just Food + Merchandise must still be reported as full
+    # coverage even though Nuts and Gourmet item exist in the catalog.
+    container = HamperContainer(name="Box", price=10, length_in=2, breadth_in=1, height_in=1)
+    items = [
+        HamperItem(name="Food A", price=100, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch A", price=100, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Nut A", price=100, category="Nuts", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Tea A", price=100, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+    ]
+    request = HamperRequest(budget_min=1, budget_max=1000, option_count=1)
+
+    result = recommend_hampers([container], items, request)
+
+    assert result.recommendations
+    top = result.recommendations[0]
+    assert top.composition.is_full_category_coverage
+    assert not top.composition.missing_categories
+    assert set(top.composition.applicable_categories) == {"Food", "Merchandise"}
+
+
+assert PREFERRED_OPTIONAL_CATEGORIES == {"Nuts"}
+BUDGET_MAX_FOR_RANK_TESTS = 1000.0
+
+
+def _rank_entry(items, total_price, utilisation_ratio=None):
+    container = HamperContainer(name="Box", price=0, length_in=10, breadth_in=10, height_in=10)
+    candidate = _Candidate(container=container, items=items, total_price=total_price)
+    ratio = utilisation_ratio if utilisation_ratio is not None else total_price / BUDGET_MAX_FOR_RANK_TESTS
+    fit_status = HamperFitStatus(fits=True, utilisation_ratio=ratio, fully_verified=True)
+    score = _score(candidate, BUDGET_MAX_FOR_RANK_TESTS, fit_status)
+    return (candidate, fit_status, score)
+
+
+def _food_merch(total_price):
+    return [
+        HamperItem(name="Food", price=total_price * 0.6, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch", price=total_price * 0.4, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+    ]
+
+
+def _food_merch_nuts(total_price):
+    return [
+        HamperItem(name="Food", price=total_price * 0.5, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch", price=total_price * 0.3, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Nuts", price=total_price * 0.2, category="Nuts", length_in=1, breadth_in=1, height_in=1),
+    ]
+
+
+@pytest.mark.parametrize("gap_pts", [1, 2, 3])
+def test_nuts_wins_within_tolerance_band(gap_pts):
+    # "If budget allows, then nuts": within NUTS_UTILISATION_TOLERANCE (3pts)
+    # of the best achievable utilisation, a Nuts-inclusive candidate must
+    # outrank a Nuts-free one, even though it uses (slightly) less budget.
+    best_utilisation = 0.90
+    no_nuts = _rank_entry(_food_merch(best_utilisation * BUDGET_MAX_FOR_RANK_TESTS), best_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+    nuts_utilisation = best_utilisation - gap_pts / 100
+    with_nuts = _rank_entry(_food_merch_nuts(nuts_utilisation * BUDGET_MAX_FOR_RANK_TESTS), nuts_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+
+    key_no_nuts = _rank_key(no_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_with_nuts = _rank_key(with_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+
+    assert key_with_nuts > key_no_nuts
+
+
+@pytest.mark.parametrize("gap_pts", [5, 10, 15])
+def test_nuts_does_not_override_candidate_5_or_more_points_below_best(gap_pts):
+    # Beyond the tolerance band, a Nuts-inclusive candidate must never beat
+    # a substantially-better-utilisation candidate just for containing Nuts.
+    best_utilisation = 0.90
+    no_nuts = _rank_entry(_food_merch(best_utilisation * BUDGET_MAX_FOR_RANK_TESTS), best_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+    nuts_utilisation = best_utilisation - gap_pts / 100
+    with_nuts = _rank_entry(_food_merch_nuts(nuts_utilisation * BUDGET_MAX_FOR_RANK_TESTS), nuts_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+
+    key_no_nuts = _rank_key(no_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_with_nuts = _rank_key(with_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+
+    assert key_no_nuts > key_with_nuts
+
+
+def test_nuts_tolerance_boundary_is_inclusive():
+    # Exactly NUTS_UTILISATION_TOLERANCE (3pts) below best must still count
+    # as "close enough" (the comparison is >=, not >).
+    assert NUTS_UTILISATION_TOLERANCE == 0.03
+    best_utilisation = 0.90
+    boundary_utilisation = best_utilisation - NUTS_UTILISATION_TOLERANCE
+    no_nuts = _rank_entry(_food_merch(best_utilisation * BUDGET_MAX_FOR_RANK_TESTS), best_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+    with_nuts = _rank_entry(
+        _food_merch_nuts(boundary_utilisation * BUDGET_MAX_FOR_RANK_TESTS), boundary_utilisation * BUDGET_MAX_FOR_RANK_TESTS
+    )
+    # And confirm just ONE percentage-point past the boundary drops out.
+    with_nuts_just_outside = _rank_entry(
+        _food_merch_nuts((boundary_utilisation - 0.01) * BUDGET_MAX_FOR_RANK_TESTS),
+        (boundary_utilisation - 0.01) * BUDGET_MAX_FOR_RANK_TESTS,
+    )
+
+    key_no_nuts = _rank_key(no_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_with_nuts = _rank_key(with_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_with_nuts_outside = _rank_key(with_nuts_just_outside, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+
+    assert key_with_nuts > key_no_nuts  # exactly at the boundary: nuts wins
+    assert key_no_nuts > key_with_nuts_outside  # one point past it: nuts loses
+
+
+def test_no_nuts_candidates_ranks_by_plain_score():
+    # When nothing in the pool contains Nuts, _rank_key must reduce to plain
+    # score ordering - identical to ranking before the Nuts preference
+    # existed. Two Food+Merchandise candidates at different utilisation.
+    best_utilisation = 0.90
+    higher = _rank_entry(_food_merch(0.90 * BUDGET_MAX_FOR_RANK_TESTS), 0.90 * BUDGET_MAX_FOR_RANK_TESTS)
+    lower = _rank_entry(_food_merch(0.50 * BUDGET_MAX_FOR_RANK_TESTS), 0.50 * BUDGET_MAX_FOR_RANK_TESTS)
+
+    key_higher = _rank_key(higher, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_lower = _rank_key(lower, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+
+    assert key_higher[0] == 0 and key_lower[0] == 0  # nuts_priority inert for both
+    assert key_higher[1] == higher[2]  # score component is exactly _score()'s output
+    assert key_higher > key_lower
+
+
+def test_nuts_does_not_receive_the_diversity_category_bonus():
+    # Adding a Nuts item must not increase diversity_score the way adding
+    # any other new category would - otherwise the preference would still
+    # get an unintended second boost stacked on top of the gated one.
+    container = HamperContainer(name="Box", price=0, length_in=10, breadth_in=10, height_in=10)
+    fit_status = HamperFitStatus(fits=True, utilisation_ratio=0.9, fully_verified=True)
+
+    two_categories = _Candidate(
+        container=container,
+        items=[
+            HamperItem(name="Food", price=100, category="Food", length_in=1, breadth_in=1, height_in=1),
+            HamperItem(name="Merch", price=100, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        ],
+        total_price=200,
+    )
+    plus_nuts = _Candidate(
+        container=container,
+        items=two_categories.items + [
+            HamperItem(name="Nuts", price=0, category="Nuts", length_in=1, breadth_in=1, height_in=1),
+        ],
+        total_price=200,
+    )
+    plus_other_category = _Candidate(
+        container=container,
+        items=two_categories.items + [
+            HamperItem(name="Tea", price=0, category="Gourmet item", length_in=1, breadth_in=1, height_in=1),
+        ],
+        total_price=200,
+    )
+
+    score_base = _score(two_categories, BUDGET_MAX_FOR_RANK_TESTS, fit_status)
+    score_plus_nuts = _score(plus_nuts, BUDGET_MAX_FOR_RANK_TESTS, fit_status)
+    score_plus_other = _score(plus_other_category, BUDGET_MAX_FOR_RANK_TESTS, fit_status)
+
+    assert score_plus_nuts == pytest.approx(score_base)  # Nuts: no diversity credit
+    assert score_plus_other == pytest.approx(score_base + 2)  # a non-preferred category: normal +2 credit
+
+
+@pytest.mark.parametrize("best_utilisation", [0.30, 0.50, 0.70, 0.90, 0.99])
+def test_nuts_gating_behavior_consistent_across_baseline_utilisation_levels(best_utilisation):
+    # The whole point of expressing the preference in percentage-point terms
+    # (rather than an additive score bonus) is that the 2pt-wins/10pt-loses
+    # behavior must hold regardless of the baseline utilisation level - the
+    # old additive-bonus approach's crossover point drifted with baseline.
+    no_nuts = _rank_entry(_food_merch(best_utilisation * BUDGET_MAX_FOR_RANK_TESTS), best_utilisation * BUDGET_MAX_FOR_RANK_TESTS)
+
+    close_utilisation = best_utilisation - 0.02
+    close_with_nuts = _rank_entry(
+        _food_merch_nuts(close_utilisation * BUDGET_MAX_FOR_RANK_TESTS), close_utilisation * BUDGET_MAX_FOR_RANK_TESTS
+    )
+    far_utilisation = best_utilisation - 0.10
+    far_with_nuts = _rank_entry(
+        _food_merch_nuts(far_utilisation * BUDGET_MAX_FOR_RANK_TESTS), far_utilisation * BUDGET_MAX_FOR_RANK_TESTS
+    )
+
+    key_no_nuts = _rank_key(no_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_close_nuts = _rank_key(close_with_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+    key_far_nuts = _rank_key(far_with_nuts, BUDGET_MAX_FOR_RANK_TESTS, best_utilisation)
+
+    assert key_close_nuts > key_no_nuts  # 2pts below best: nuts wins, at every baseline
+    assert key_no_nuts > key_far_nuts  # 10pts below best: nuts loses, at every baseline
+
+
+def test_nuts_preference_never_forced_when_it_does_not_fit_budget():
+    # When no valid combo containing Nuts fits the budget, the engine must
+    # still return the best non-Nuts candidate rather than failing - the
+    # preference can never become a hard requirement.
+    container = HamperContainer(name="Box", price=10, length_in=2, breadth_in=1, height_in=1)
+    items = [
+        HamperItem(name="Food A", price=50, category="Food", length_in=1, breadth_in=1, height_in=1),
+        HamperItem(name="Merch A", price=50, category="Merchandise", length_in=1, breadth_in=1, height_in=1),
+        # Priced far beyond the budget cap below - can never appear in any
+        # valid candidate.
+        HamperItem(name="Nut A", price=10_000, category="Nuts", length_in=1, breadth_in=1, height_in=1),
+    ]
+    request = HamperRequest(budget_min=1, budget_max=120, option_count=1)
+
+    result = recommend_hampers([container], items, request)
+
+    assert result.recommendations
+    top = result.recommendations[0]
+    assert top.composition.is_full_category_coverage
+    assert "Nut A" not in {item.name for item in top.items}

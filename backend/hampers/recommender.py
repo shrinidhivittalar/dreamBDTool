@@ -54,6 +54,31 @@ DIVERSITY_OVERLAP_THRESHOLD = 0.6
 # requested, fewer options are returned rather than reusing one.
 MAX_CONTAINER_REPEATS = 1
 
+# Category tags that are not part of the hard "one of each category"
+# coverage requirement - carved out by explicit stakeholder rule (2026-08-31:
+# "one of each category, and if budget allows, then nuts"), not derived from
+# catalog data. Any category NOT in this set is still hard-required, exactly
+# as before - this only removes these two from that requirement.
+OPTIONAL_CATEGORIES = {"Nuts", "Gourmet item"}
+
+# Of the optional categories above, which get a ranking preference (chosen
+# over a Nuts-free candidate when the budget allows) rather than being
+# merely allowed. Per the stakeholder rule, that's Nuts only - Gourmet item
+# (tea) is optional with no preference either way.
+PREFERRED_OPTIONAL_CATEGORIES = {"Nuts"}
+
+# "If budget allows, then nuts": how close (in percentage points of
+# budget_max) a candidate's utilisation must be to the best utilisation
+# achievable by any hard-valid candidate for it to be considered "close
+# enough" for the Nuts preference to apply (see _rank_key). 2026-09-01
+# stakeholder-set threshold - deliberately NOT implemented as an additive
+# score bonus: a flat bonus competes against utilisation_score's quadratic
+# curve, whose slope varies with baseline utilisation, so no single bonus
+# value reliably corresponds to "a small percentage-point gap" across all
+# utilisation levels. Expressing the preference directly in percentage-point
+# terms instead gives a fixed, predictable crossover regardless of baseline.
+NUTS_UTILISATION_TOLERANCE = 0.03
+
 # A hamper where the container itself eats most of the budget, leaving only
 # a token amount for actual product, is technically valid but not a good
 # recommendation. Require the item content to be worth at least this
@@ -359,7 +384,21 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
     utilisation_score = (utilisation ** 2) * 40
 
     distinct_categories = len({item.category for item in candidate.items if item.category})
-    diversity_score = distinct_categories * 2
+    # Nuts is excluded from the diversity count on purpose: it already has
+    # its own dedicated preference channel (_rank_key's utilisation-gated
+    # nuts_priority), and letting it also earn generic diversity credit here
+    # would double-count that preference (stacking a second, unbounded
+    # advantage on top of the gated one) - see 2026-09-01 stakeholder
+    # decision. Other categories, including the still-optional-but-not-
+    # preferred Gourmet item, keep counting normally. distinct_categories
+    # itself (all categories, Nuts included) is kept as-is for the
+    # composition_penalty concentration check below - that penalty is about
+    # samey/repetitive item mixes, unrelated to the Nuts preference.
+    diversity_categories = {
+        item.category for item in candidate.items
+        if item.category and item.category not in PREFERRED_OPTIONAL_CATEGORIES
+    }
+    diversity_score = len(diversity_categories) * 2
 
     fit_confidence = 3 if fit_status.fits and fit_status.utilisation_ratio is not None else 1
 
@@ -393,7 +432,46 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
         capped_ratio = min(fit_status.utilisation_ratio, 1.0)
         fill_adjustment = (capped_ratio ** 2) * 10
 
+    # The Nuts preference ("if budget allows, then nuts") is deliberately
+    # NOT a term in this score - it's expressed separately in _rank_key()
+    # as a utilisation-gated lexicographic tie-break, not an additive bonus.
+    # See _rank_key's docstring for why.
     return utilisation_score + diversity_score + fit_confidence + fill_adjustment - composition_penalty
+
+
+def _has_preferred_optional(candidate: _Candidate) -> bool:
+    return any(item.category in PREFERRED_OPTIONAL_CATEGORIES for item in candidate.items)
+
+
+def _rank_key(
+    entry: tuple[_Candidate, HamperFitStatus, float],
+    budget_max: float,
+    best_utilisation: float,
+) -> tuple[int, float]:
+    """Ranking key implementing "if budget allows, then nuts" as a gated
+    tie-break rather than an additive score bonus (see NUTS_UTILISATION_TOLERANCE
+    for why an additive bonus can't reliably express "small percentage-point
+    gap" across different baseline utilisation levels).
+
+    A candidate's utilisation must be within NUTS_UTILISATION_TOLERANCE of
+    best_utilisation (the best utilisation achieved by any hard-valid
+    candidate for this request) for containing Nuts to count at all. Inside
+    that band, any Nuts-containing candidate outranks any candidate without
+    one, regardless of the (small, by construction) utilisation difference
+    between them. Outside the band, Nuts contributes nothing here - ranking
+    falls through to plain `score`, which is utilisation-dominant, so a
+    candidate trailing the best by more than the tolerance can never win
+    just for containing Nuts.
+
+    When no candidate in the pool contains Nuts at all, `nuts_priority` is 0
+    for every entry, and this key reduces to plain `score` - identical to
+    ranking before this preference existed.
+    """
+    candidate, _fit_status, score = entry
+    utilisation = candidate.total_price / budget_max if budget_max > 0 else 0
+    in_band = utilisation >= best_utilisation - NUTS_UTILISATION_TOLERANCE
+    nuts_priority = 1 if (in_band and _has_preferred_optional(candidate)) else 0
+    return (nuts_priority, score)
 
 
 def _explanation(
@@ -660,6 +738,11 @@ def recommend_hampers(
         and (not request.preferred_categories or item.category in request.preferred_categories)
     ]
     applicable_categories = {item.category for item in eligible_for_categories if item.category}
+    # OPTIONAL_CATEGORIES are excluded from the hard "one of each category"
+    # requirement below - required_categories is the actual coverage
+    # yardstick everywhere it's used (hard gate, composition reporting,
+    # messaging).
+    required_categories = applicable_categories - OPTIONAL_CATEGORIES
 
     for container in containers:
         for candidate in _generate_candidates_for_container(container, items, request, reasons):
@@ -680,10 +763,10 @@ def recommend_hampers(
     # a full-coverage candidate could be silently excluded just because
     # some higher-utilisation, partial-coverage candidate exists, even
     # though partial coverage is supposed to never be returned at all.
-    if applicable_categories:
+    if required_categories:
         full_coverage_candidates = [
             entry for entry in all_candidates
-            if applicable_categories <= covered_categories(entry[0])
+            if required_categories <= covered_categories(entry[0])
         ]
     else:
         full_coverage_candidates = all_candidates
@@ -699,11 +782,25 @@ def recommend_hampers(
     # actively fighting the unique-container requirement below.
     full_coverage_pool = full_coverage_candidates
 
+    # best_utilisation is the ceiling _rank_key's Nuts-preference band is
+    # measured against - computed globally across every hard-valid
+    # (required-category-covered, fit/budget/fill-eligible) candidate for
+    # this request, before diverse-selection narrows the pool down.
+    best_utilisation = max(
+        (entry[0].total_price / request.budget_max if request.budget_max else 0 for entry in full_coverage_pool),
+        default=0.0,
+    )
+    full_coverage_pool = sorted(
+        full_coverage_pool,
+        key=lambda entry: _rank_key(entry, request.budget_max, best_utilisation),
+        reverse=True,
+    )
+
     picked = _select_diverse(full_coverage_pool, request.option_count)
 
     recommendations = []
     for candidate, fit_status, score in picked:
-        composition = _composition(candidate.items, applicable_categories)
+        composition = _composition(candidate.items, required_categories)
         recommendations.append(HamperRecommendation(
             container=candidate.container,
             items=candidate.items,
@@ -717,13 +814,13 @@ def recommend_hampers(
 
     message_parts: list[str] = []
     if not recommendations:
-        if applicable_categories and request.items_per_box is not None and request.items_per_box < len(applicable_categories):
+        if required_categories and request.items_per_box is not None and request.items_per_box < len(required_categories):
             message_parts.append(
-                f"Requested {request.items_per_box} item(s) per box, but {len(applicable_categories)} "
-                f"categor{'y' if len(applicable_categories) == 1 else 'ies'} must each be represented - "
+                f"Requested {request.items_per_box} item(s) per box, but {len(required_categories)} "
+                f"categor{'y' if len(required_categories) == 1 else 'ies'} must each be represented - "
                 f"full category coverage is structurally impossible with that item count."
             )
-        elif applicable_categories and all_candidates:
+        elif required_categories and all_candidates:
             message_parts.append(
                 "No hamper covering every applicable category could be found within the budget and "
                 "other constraints (must-include items, exclusions, or dimension compatibility)."
