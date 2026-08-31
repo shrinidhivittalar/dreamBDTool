@@ -1,7 +1,7 @@
 // Mirrors backend/hampers/catalog_loader.py's "Tag" column values - the
 // real per-item categories (distinct from the CSV's "Category" column,
 // which only distinguishes container vs item rows).
-export const hamperCategories = ['Food', 'Gourmet item', 'Merchandise']
+export const hamperCategories = ['Food', 'Gourmet item', 'Merchandise', 'Nuts']
 
 export const MAX_HAMPER_OPTION_COUNT = 10 // mirrors HamperRequest.option_count le=10
 export const MAX_ITEMS_PER_BOX = 6 // mirrors HamperRequest.items_per_box le=6
