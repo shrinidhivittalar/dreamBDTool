@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Raleway:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap');
 @import "tailwindcss";
 
 :root { font-family: 'DM Sans', sans-serif; color: #2d2927; background: #f6f0e8; font-synthesis: none; }
@@ -51,7 +52,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .budget-inputs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .budget-inputs input { min-width: 0; }
 .stepper { display: flex; align-items: center; justify-content: space-between; width: 150px; border: 1px solid #d9cfc6; border-radius: 8px; background: #fffdfa; overflow: hidden; }
-.stepper button { width: 42px; height: 40px; border: 0; background: transparent; color: #bd285c; font-size: 20px; cursor: pointer; transition: background 150ms ease; }
+.stepper button { width: 38px; height: 34px; border: 0; background: transparent; color: #bd285c; font-size: 18px; cursor: pointer; transition: background 150ms ease; }
 .stepper button:hover { background: #fff0f4; }
 .stepper span { color: #302a27; font-weight: 700; } .stepper small { color: #9b8f87; font-size: 11px; font-weight: 400; }
 .option-slider { width: 100%; height: 4px; border-radius: 999px; background: #e4dcd4; appearance: none; cursor: pointer; }
@@ -70,7 +71,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .segmented-control button.selected { background: #fffdfa; color: #a51f50; box-shadow: 0 2px 6px #49312612; font-weight: 700; }
 .wizard-next { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 14px; border: 0; border-radius: 8px; background: #bd285c; padding: 12px 15px; color: white; font-size: 13px; font-weight: 700; box-shadow: 0 5px 12px #bd285c35; cursor: pointer; transition: all 150ms ease; }
 .wizard-next:hover { background: #a71e4f; transform: translateY(-1px); } .wizard-next:disabled { cursor: wait; opacity: .6; transform: none; }
-.wizard-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; } .wizard-actions .wizard-next { margin-top: 0; }
+.wizard-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; } .wizard-actions .wizard-next { margin-top: 0; }
 .wizard-back { border: 0; background: transparent; color: #766b64; font-size: 13px; cursor: pointer; }
 .wizard-back-top { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid #e4dcd4; border-radius: 999px; background: #fffdfa; color: #514844; font-size: 14px; cursor: pointer; transition: all .15s; }
 .wizard-back-top:hover { border-color: #bd285c; color: #a51f50; }
@@ -110,9 +111,6 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .recap-chip { border: 1px solid #eee5dd; border-radius: 999px; background: #fcf8f3; color: #766b64; padding: 4px 10px; font-size: 11px; font-weight: 600; }
 .summary-card { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 22px; border: 1px solid #eee5dd; border-radius: 10px; background: #fcf8f3; padding: 14px; color: #766b64; font-size: 12px; }
 .summary-card div { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee5dd; padding-bottom: 10px; } .summary-card strong { color: #bd285c; font-size: 15px; }
-.landing-choice-card { display: flex; flex-direction: column; align-items: flex-start; padding: 26px; text-align: left; cursor: pointer; transition: all .18s; }
-.landing-choice-card:hover { border-color: #bd285c; box-shadow: 0 2px 4px #49312610, 0 16px 36px #49312614; transform: translateY(-1px); }
-.landing-choice-icon { font-size: 26px; margin-bottom: 10px; }
 .hamper-status-line { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; font-weight: 600; line-height: 1.5; }
 .hamper-status-icon { flex-shrink: 0; }
 .hamper-status-ok { color: #4c8664; }
@@ -120,4 +118,86 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .hamper-status-bad { color: #c0264f; }
 @keyframes wizard-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) { .summary-card { grid-template-columns: 1fr; } .summary-card div { grid-column: auto; } .segmented-control button { font-size: 11px; } }
+
+/* ---------------------------------------------------------------------
+   Dream A Dozen brand system (2026-09-02 style guide) - scoped under
+   .brand-dad so it can be applied to the new sidebar + Hamper flow
+   without touching the still-unstyled-to-this-system Snack Box flow.
+   Overrides target the existing shared primitive classes (.card, .pill,
+   .input, .stepper, .wizard-next, .tag, .suggest-*) by variable so the
+   underlying components need no JSX changes.
+--------------------------------------------------------------------- */
+.brand-dad {
+  --dad-accent: #844292;       /* Deep Orchid Purple - active states, progress */
+  --dad-accent-strong: #4c1f53;/* Royal Mulberry - headings, strong ink */
+  --dad-accent-soft: #f3e8f6;
+  --dad-cta: #c22026;          /* Crimson Red - primary action only */
+  --dad-cta-hover: #a81b20;
+  --dad-ink: #301736;          /* Deep Plum */
+  --dad-ink-soft: #6b5570;
+  --dad-bg: #f5ebf4;           /* Soft Lavender Mist */
+  --dad-surface: #ffffff;
+  --dad-border: #e6d6ea;
+  --dad-sidebar-bg: #220f28;   /* Midnight Violet */
+  --dad-ok: #2f7d4f;
+  --dad-warn: #a5690a;
+  --dad-bad: #c0264f;
+  font-family: 'Raleway', sans-serif;
+  color: var(--dad-ink);
+  background: var(--dad-bg);
+}
+.brand-dad .serif { font-family: 'Lora', Georgia, serif; }
+.brand-dad .card { background: var(--dad-surface); border-color: var(--dad-border); border-radius: 16px; }
+.brand-dad .pill:hover { border-color: var(--dad-accent); background: var(--dad-accent-soft); color: var(--dad-accent-strong); }
+.brand-dad .pill.active { border-color: var(--dad-accent); background: var(--dad-accent); color: #fff; }
+.brand-dad .input:focus { border-color: var(--dad-accent); box-shadow: 0 0 0 3px #84429220; }
+.brand-dad .stepper { border-color: var(--dad-border); }
+.brand-dad .stepper button { color: var(--dad-accent); }
+.brand-dad .stepper button:hover { background: var(--dad-accent-soft); }
+.brand-dad .wizard-kicker, .brand-dad .summary-label { color: var(--dad-accent-strong); }
+.brand-dad .wizard-next { background: var(--dad-cta); box-shadow: 0 5px 12px #c2202635; font-family: 'Raleway', sans-serif; }
+.brand-dad .wizard-next:hover { background: var(--dad-cta-hover); }
+.brand-dad .tag { background: var(--dad-accent-soft); color: var(--dad-accent-strong); }
+.brand-dad .tag button { color: var(--dad-accent); }
+.brand-dad .field-note { color: var(--dad-warn); }
+.brand-dad .field-error { color: var(--dad-bad); }
+.brand-dad .suggest-option:hover { background: var(--dad-accent-soft); }
+.brand-dad .suggest-option.picked { color: var(--dad-accent-strong); }
+.brand-dad .suggest-check.on { background: var(--dad-accent-strong); border-color: var(--dad-accent-strong); }
+.brand-dad .hamper-status-ok { color: var(--dad-ok); }
+.brand-dad .hamper-status-warn { color: var(--dad-warn); }
+.brand-dad .hamper-status-bad { color: var(--dad-bad); }
+.brand-dad .option-card { border-left-color: var(--dad-accent) !important; }
+
+/* Sidebar */
+.dad-sidebar { width: 240px; flex-shrink: 0; background: #220f28; color: #f5ebf4; display: flex; flex-direction: column; height: 100vh; }
+.dad-sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 22px 20px 18px; }
+.dad-sidebar-wordmark { font-family: 'Lora', Georgia, serif; font-size: 17px; line-height: 1.1; color: #f6ecf8; }
+.dad-sidebar-subtitle { margin-top: 3px; font-size: 9px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #b79bc0; }
+.dad-sidebar-nav { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; }
+.dad-nav-item { display: flex; align-items: center; gap: 10px; border: 0; border-radius: 10px; background: transparent; color: #d8c3de; padding: 11px 12px; font-size: 13.5px; font-weight: 600; font-family: 'Raleway', sans-serif; cursor: pointer; transition: background .15s, color .15s; text-align: left; }
+.dad-nav-item:hover { background: #33193c; color: #f6ecf8; }
+.dad-nav-item.active { background: #844292; color: #fff; }
+.dad-nav-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; }
+.dad-sidebar-footer { margin-top: auto; padding: 14px 20px 20px; font-size: 11px; color: #9c84a6; display: flex; align-items: center; gap: 6px; }
+.dad-sidebar-refresh { border: 0; background: transparent; color: #9c84a6; cursor: pointer; display: inline-flex; }
+.dad-sidebar-refresh:hover { color: #f6ecf8; }
+.dad-main { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; }
+/* Safety net: on a normal-height window the wizard card fits on screen
+   with no scroll at all. Only if it genuinely can't (a very short window,
+   or a very long future form) does it scroll internally instead of
+   forcing the whole page - and the sidebar/header never move either way. */
+.wizard-card { max-height: calc(100vh - 108px); overflow-y: auto; scrollbar-width: thin; }
+
+/* Hamper card progress bars (budget used / container fill) */
+.dad-progress-row { margin-top: 10px; }
+.dad-progress-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: var(--dad-ink-soft, #6b5570); margin-bottom: 4px; }
+.dad-progress-label strong { color: var(--dad-ink, #301736); font-weight: 700; }
+.dad-progress-track { height: 6px; border-radius: 99px; background: var(--dad-accent-soft, #f3e8f6); overflow: hidden; }
+.dad-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--dad-accent, #844292); transition: width 200ms ease; }
+@media (max-width: 900px) {
+  .dad-sidebar { width: 100%; min-height: auto; flex-direction: row; align-items: center; justify-content: space-between; }
+  .dad-sidebar-nav { flex-direction: row; padding: 8px 12px; }
+  .dad-sidebar-footer { display: none; }
+}
 

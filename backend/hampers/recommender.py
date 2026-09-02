@@ -80,20 +80,15 @@ PREFERRED_OPTIONAL_CATEGORIES = {"Nuts"}
 # terms instead gives a fixed, predictable crossover regardless of baseline.
 NUTS_UTILISATION_TOLERANCE = 0.03
 
-# 2026-09-02 stakeholder rule: "every gift box must include a greeting
-# card, no exceptions." NOT yet wired on - whether the card's price/volume
-# should count against budget/fill/item-count like a normal item, or be a
-# free addition outside those checks entirely (like the snack-box engine's
-# ketchup sachet), is an open business question the user explicitly said
-# should be decided by the company, not guessed here. Flip this flag to
-# True once that's decided AND the real "Greeting Card" catalog name is
-# confirmed to match GREETING_CARD_ITEM_NAME below. As built, turning it on
-# routes Greeting Card through the existing mandatory-item pipeline, so it
-# WOULD count toward budget/volume/fit like any other must-include item -
-# if the company instead wants a free addition, that needs a different
-# code path (mirroring packaging_requirements()'s free-ketchup pattern in
-# the snack-box engine), not just this flag.
-GREETING_CARD_MANDATORY = False
+# 2026-09-02 stakeholder rule, resolved: every hamper must include a
+# greeting card, no exceptions, and it counts toward price/budget/fill like
+# any other item - the total (container + items, greeting card included)
+# still cannot exceed budget_max. Routed through the existing
+# mandatory-item pipeline (see mandatory_names below), which already
+# enforces exactly that: mandatory items' cost is added to the budget
+# check before any optional items are chosen, so the cap is never
+# exceeded. "Greeting Card" is a real catalog item (Merchandise, ~Rs 12).
+GREETING_CARD_MANDATORY = True
 GREETING_CARD_ITEM_NAME = "Greeting Card"
 
 # A hamper where the container itself eats most of the budget, leaving only

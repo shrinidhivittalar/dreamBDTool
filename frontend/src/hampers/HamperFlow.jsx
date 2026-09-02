@@ -29,7 +29,11 @@ export function HamperFlow() {
       ? form.preferred_categories.filter(value => value !== item)
       : [...form.preferred_categories, item])
   }
-  const budgetInvalid = form.budget_min > form.budget_max
+  // '' is a transient state while the user is mid-edit (backspacing the
+  // field to retype it) - see HamperWizard's budget input onChange. Treated
+  // as invalid here (not coerced to 0) so Generate stays disabled until a
+  // real number is entered, rather than silently submitting budget_min=0.
+  const budgetInvalid = form.budget_min === '' || form.budget_max === '' || form.budget_min > form.budget_max
 
   async function generate() {
     setLoading(true)
@@ -56,7 +60,7 @@ export function HamperFlow() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
+    <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
       <HamperWizard
         budgetInvalid={budgetInvalid}
         catalogStatus={catalogStatus}

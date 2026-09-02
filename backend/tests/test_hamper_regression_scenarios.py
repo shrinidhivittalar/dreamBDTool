@@ -324,10 +324,16 @@ def test_snapshot_1500_budget_top_option_favours_budget_utilisation(catalog):
     # _generate_candidates_for_container) means item counts up to 6 are now
     # actually considered, surfacing options this catalog always had.
     # Confirmed deterministic via direct inspection.
+    #
+    # 2026-09-02: dropped from 3 to 2 after GREETING_CARD_MANDATORY was
+    # turned on - Greeting Card now occupies one item slot and ~Rs 12 of
+    # budget in every candidate, which pushed one previously-70%+-fill
+    # container below the floor at this budget. Expected consequence of the
+    # business rule, not a regression - re-confirmed live.
     request = HamperRequest(budget_min=1, budget_max=1500, option_count=5)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 3
+    assert result.found_count == 2
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     top = result.recommendations[0]
@@ -363,10 +369,13 @@ def test_snapshot_2500_budget_unique_containers_all_full_category_coverage(catal
     # Fixed via multiple deterministic pool orderings (catalog/price-desc/
     # price-asc/budget-balanced) sharing the same fixed per-size budget.
     # Confirmed deterministic via direct inspection.
+    #
+    # 2026-09-02: dropped from 4 to 3 after GREETING_CARD_MANDATORY was
+    # turned on - same reasoning as the 1500-budget snapshot above.
     request = HamperRequest(budget_min=1, budget_max=2500, option_count=4)
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
-    assert result.found_count == 4
+    assert result.found_count == 3
     container_names = [rec.container.name for rec in result.recommendations]
     assert len(container_names) == len(set(container_names))
     assert all(rec.composition.is_full_category_coverage for rec in result.recommendations)
