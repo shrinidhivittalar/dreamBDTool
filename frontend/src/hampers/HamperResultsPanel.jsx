@@ -12,7 +12,7 @@ export function HamperResultsPanel({ loading, message, result }) {
         </div>
         <div className="flex items-center gap-3">
           {loading && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-[#a51f50]">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-[#844292]">
               <span className="results-spinner" aria-hidden="true" /> Finding hamper options...
             </span>
           )}
@@ -25,13 +25,13 @@ export function HamperResultsPanel({ loading, message, result }) {
       </div>
 
       {message && (
-        <div className="mb-3 rounded-lg border border-[#eed3db] bg-[#fff4f6] px-4 py-2.5 text-sm text-[#a51f50]">{message}</div>
+        <div className="mb-3 rounded-lg border border-[#f0c9cf] bg-[#fdf0f1] px-4 py-2.5 text-sm text-[#c0264f]">{message}</div>
       )}
 
       {recommendations.length === 0 ? (
-        <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-[#d8ccc2] bg-[#f9f4ed] px-8 text-center">
+        <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-dashed border-[#d9c3de] bg-[#f5ebf4] px-8 text-center">
           <div className="max-w-sm">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#f3dce3] text-xl text-[#bd285c]">?</div>
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#f3e8f6] text-xl text-[#844292]">?</div>
             <h3 className="serif text-xl">Ready when you are</h3>
             <p className="mt-2 text-sm leading-6 text-[#83776f]">Fill in the requirements on the left and we'll find the best container + item combinations for your budget.</p>
           </div>

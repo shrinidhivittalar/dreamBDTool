@@ -14,17 +14,12 @@ export function HamperWizard({
   toggleCategory,
 }) {
   return (
-    <aside className="card wizard-card h-fit p-5 sm:p-7">
-      <div className="mb-7 flex items-center justify-between">
+    <aside className="card wizard-card h-fit p-4 sm:p-5">
+      <div className="mb-2.5 flex items-center justify-between">
         <div>
           <p className="wizard-kicker">New brief</p>
-          <h2 className="serif mt-1 text-2xl text-[#302a27]">Create a hamper</h2>
+          <h2 className="serif mt-0.5 text-lg text-[#301736]">Create a hamper</h2>
         </div>
-      </div>
-
-      <div className="mb-6">
-        <p className="text-sm font-semibold text-[#3a322e]">Fill in your requirements</p>
-        <p className="mt-1 text-sm text-[#91857d]">We'll find the best hamper container + item combinations.</p>
       </div>
 
       <Field label="Budget range" hint={catalogStatus ? `${catalogStatus.container_count} containers, ${catalogStatus.item_count} items in catalog` : undefined}>
@@ -37,7 +32,11 @@ export function HamperWizard({
                 className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none"
                 type="number"
                 value={form[key]}
-                onChange={e => onSet(key, Math.max(0, Number(e.target.value)))}
+                onChange={e => {
+                  const raw = e.target.value
+                  onSet(key, raw === '' ? '' : Math.max(0, Number(raw)))
+                }}
+                onBlur={e => { if (e.target.value === '') onSet(key, 0) }}
               />
             </label>
           ))}
@@ -78,7 +77,7 @@ export function HamperWizard({
 
       <Field label="Preferred categories" hint="at least these should be present">
         <MultiSelect items={hamperCategories} selected={form.preferred_categories} onToggle={toggleCategory} />
-        <p className="field-note">We'll try to cover every category you've selected in each hamper. If that's not possible within budget, we'll clearly mark the fallback options.</p>
+        <p className="field-note">We'll cover every selected category when possible - fallbacks are clearly marked.</p>
       </Field>
 
       <Field label="Mandatory products (optional)" hint="these must be included">

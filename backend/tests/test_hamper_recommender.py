@@ -1,5 +1,6 @@
 import pytest
 
+from backend.hampers import recommender as recommender_module
 from backend.hampers.models import HamperContainer, HamperFitStatus, HamperItem, HamperRequest
 from backend.hampers.recommender import (
     NUTS_UTILISATION_TOLERANCE,
@@ -10,6 +11,17 @@ from backend.hampers.recommender import (
     _score,
     recommend_hampers,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_greeting_card_mandate(monkeypatch):
+    # These tests use minimal synthetic catalogs (see ITEMS below) that
+    # don't include a "Greeting Card" item and aren't testing that feature -
+    # the real mandate (GREETING_CARD_MANDATORY = True in recommender.py) is
+    # covered separately by test_hamper_greeting_card.py against a catalog
+    # that actually has the item. Without this, every test here would fail
+    # on "Must-include item(s) not found in catalog: greeting card".
+    monkeypatch.setattr(recommender_module, "GREETING_CARD_MANDATORY", False)
 
 # Sized so combos actually used across these tests (Cookie Tin alone, or
 # Cookie Tin + one Merchandise item) clear the 70% hard fill floor - a

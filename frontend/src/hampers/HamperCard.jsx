@@ -1,6 +1,19 @@
 import { money } from '../lib/format'
 
-const ACCENT = '#bd285c'
+function ProgressRow({ label, pct, note }) {
+  const clamped = pct == null ? 0 : Math.max(0, Math.min(100, pct))
+  return (
+    <div className="dad-progress-row">
+      <div className="dad-progress-label">
+        <span>{label}</span>
+        <strong>{pct == null ? '—' : `${note || ''}${Math.round(pct)}%`}</strong>
+      </div>
+      <div className="dad-progress-track">
+        <span className="dad-progress-fill" style={{ width: `${clamped}%` }} />
+      </div>
+    </div>
+  )
+}
 
 function CategoryCoverage({ composition }) {
   if (composition.is_full_category_coverage) {
@@ -62,56 +75,48 @@ export function HamperCard({ recommendation, index }) {
   const fillPct = fit_status.utilisation_ratio != null ? Math.round(fit_status.utilisation_ratio * 100) : null
 
   return (
-    <article className="card option-card overflow-hidden" style={{ borderLeft: `4px solid ${ACCENT}` }}>
-      <div className="flex items-center justify-between border-b border-[#eee5dd] px-4 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f7dce5] text-xs font-bold text-[#b32758]">
-            {String(index + 1).padStart(2, '0')}
-          </span>
-          <h3 className="text-sm font-bold text-[#3a322e]">{container.name}</h3>
-        </div>
+    <article className="card option-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-3.5">
+        <h3 className="serif text-base leading-tight" style={{ color: 'var(--dad-accent-strong, #302a27)' }}>{container.name}</h3>
         {index === 0 && (
           <span className="rounded-full bg-[#e8f3ec] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#4c8664]">Top pick</span>
         )}
       </div>
 
       <div className="px-4 pt-2">
-        {items.map(item => (
-          <div key={item.name} className="border-b border-[#f1eae4] py-1.5 last:border-0">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex flex-wrap items-center gap-1.5 pr-3 text-[13px] text-[#4b423d]">{item.name}</span>
-              <span className="whitespace-nowrap text-[11px] text-[#9b8d84]">{money(item.price)}</span>
-            </div>
+        {items.slice(0, 3).map(item => (
+          <div key={item.name} className="flex items-center gap-1.5 py-0.5 text-[13px]" style={{ color: 'var(--dad-ink-soft, #4b423d)' }}>
+            <span aria-hidden="true">·</span>
+            <span>{item.name}</span>
           </div>
         ))}
+        {items.length > 3 && (
+          <div className="pt-0.5 text-[12px] font-semibold" style={{ color: 'var(--dad-accent, #a5690a)' }}>+ {items.length - 3} more items</div>
+        )}
       </div>
 
-      <div className="bg-[#fcf8f3] px-4 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#9b8d84]">Total price</div>
-            <div className="serif mt-0.5 text-lg text-[#302a27]">{money(total_price)}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#9b8d84]">Budget used</div>
-            <div className="serif mt-0.5 text-lg text-[#302a27]">{Math.round(budget_utilisation * 100)}%</div>
-          </div>
-        </div>
+      <div className="mt-3 px-4 pb-3.5">
+        <div className="serif text-xl" style={{ color: 'var(--dad-ink, #302a27)' }}>{money(total_price)}</div>
 
-        <div className="mt-1.5 text-[11px] text-[#9b8d84]">
-          <span className="font-semibold text-[#766b64]">Container space:</span>{' '}
-          {fillPct == null ? (
-            'cannot be fully estimated'
-          ) : fit_status.fill_estimate_partial ? (
-            <>at least {fillPct}%<span className="text-[10px]"> * excludes items with incomplete dimensions</span></>
-          ) : (
-            `estimated fill ${fillPct}%`
-          )}
-        </div>
+        <ProgressRow label="Budget used" pct={budget_utilisation * 100} />
+        <ProgressRow
+          label="Estimated container fill"
+          pct={fillPct}
+          note={fillPct != null && fit_status.fill_estimate_partial ? 'at least ' : ''}
+        />
+        {fillPct == null && (
+          <p className="mt-1 text-[10px]" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>Fill cannot be fully estimated - dimensions missing.</p>
+        )}
 
-        <div className="mt-2 flex flex-col gap-1 border-t border-[#eee5dd] pt-2">
-          <CategoryCoverage composition={composition} />
+        <div className="mt-2.5 flex flex-col gap-1 border-t pt-2.5" style={{ borderColor: 'var(--dad-border, #eee5dd)' }}>
           <FitStatus fitStatus={fit_status} />
+          <CategoryCoverage composition={composition} />
+        </div>
+
+        {/* Static for now - expand-to-detail isn't wired up yet (known gap,
+            tracked separately), so this is a label, not a clickable button. */}
+        <div className="mt-2.5 text-right text-[11px] font-semibold" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>
+          View Details ⌄
         </div>
       </div>
     </article>

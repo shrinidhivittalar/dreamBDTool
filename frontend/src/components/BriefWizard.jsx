@@ -29,17 +29,17 @@ export function BriefWizard({
   const matchedPresetLabel = categoryPresets.find(preset => preset.value === matchedPreset)?.label
 
   return (
-    <aside className="card wizard-card h-fit p-5 sm:p-7">
-      <div className="mb-7 flex items-center justify-between">
+    <aside className="card wizard-card h-fit p-4 sm:p-5">
+      <div className="mb-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {step === 2 && <button type="button" className="wizard-back-top" onClick={() => onStepChange(1)} aria-label="Back">&larr;</button>}
-          <div><p className="wizard-kicker">New brief</p><h2 className="serif mt-1 text-2xl text-[#302a27]">Create a snack box</h2></div>
+          <div><p className="wizard-kicker">New brief</p><h2 className="serif mt-1 text-2xl text-[#301736]">Create a snack box</h2></div>
         </div>
         <span className="wizard-step-count">0{step} / 02</span>
       </div>
       <div className="wizard-progress"><span style={{ width: `${step * 50}%` }} /></div>
-      {step === 1 ? <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Let's set the basics</p><p className="mt-1 text-sm text-[#91857d]">Start with the shape and budget of the box.</p></div>
-        <Field label="Budget range" hint={catalogRange ? `Catalog items ${RUPEE}${Math.round(catalogRange.min)}-${RUPEE}${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>{RUPEE}</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => onSet(key, Math.max(0, Number(e.target.value)))} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}</Field>
+      {step === 1 ? <div className="wizard-step"><div className="mb-4"><p className="text-sm font-semibold text-[#301736]">Let's set the basics</p><p className="mt-1 text-sm text-[#6b5570]">Start with the shape and budget of the box.</p></div>
+        <Field label="Budget range" hint={catalogRange ? `Catalog items ${RUPEE}${Math.round(catalogRange.min)}-${RUPEE}${Math.round(catalogRange.max)}` : undefined}><div className="budget-inputs">{[['budget_min', 'Minimum'], ['budget_max', 'Maximum']].map(([key, label]) => <label className="input flex items-center gap-1" key={key}><span>{RUPEE}</span><input aria-label={label} className="min-w-0 flex-1 border-0 bg-transparent p-0 outline-none" type="number" value={form[key]} onChange={e => { const raw = e.target.value; onSet(key, raw === '' ? '' : Math.max(0, Number(raw))) }} onBlur={e => { if (e.target.value === '') onSet(key, 0) }} /></label>)}</div>{budgetInvalid && <p className="field-error">Minimum can't be greater than maximum.</p>}</Field>
         <Field label="Number of items" hint="up to 10">
           <div className="stepper">
             <button type="button" onClick={() => onSet('item_count', Math.max(1, form.item_count - 1))}>-</button>
@@ -69,7 +69,7 @@ export function BriefWizard({
           </p>
         </Field>
         <button type="button" className="wizard-next" onClick={() => { if (!budgetInvalid) onStepChange(2) }} disabled={budgetInvalid}>Continue <span>&rarr;</span></button>
-      </div> : <div className="wizard-step"><div className="mb-6"><p className="text-sm font-semibold text-[#3a322e]">Shape the selection</p><p className="mt-1 text-sm text-[#91857d]">Tell us what should make it into the box.</p></div>
+      </div> : <div className="wizard-step"><div className="mb-4"><p className="text-sm font-semibold text-[#301736]">Shape the selection</p><p className="mt-1 text-sm text-[#6b5570]">Tell us what should make it into the box.</p></div>
         <Field label="Must include (optional)" hint="press enter or use commas - tap Must/Preferred on a tag to set it">
           <MustIncludeField
             entries={form.must_include}

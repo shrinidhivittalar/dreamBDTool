@@ -5,7 +5,7 @@ import { categories, initialForm } from './config/brief'
 import { exportRecommendations, fetchProducts, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
 import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
-export function App({ onBackToLanding }) {
+export function App({ hideBrand }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState(initialForm)
   const [recommendations, setRecommendations] = useState([])
@@ -46,7 +46,10 @@ export function App({ onBackToLanding }) {
       : [...form.preferred_categories, item])
   }
   const applyCategoryPreset = presetCategories => set('preferred_categories', [...presetCategories])
-  const budgetInvalid = form.budget_min > form.budget_max
+  // '' is a transient mid-edit state (see BriefWizard's budget input) -
+  // treated as invalid so Continue stays disabled instead of silently
+  // treating a blank field as 0.
+  const budgetInvalid = form.budget_min === '' || form.budget_max === '' || form.budget_min > form.budget_max
   const maxPossibleTotal = catalogRange ? form.item_count * catalogRange.max : null
   const budgetTooHighForItems = !budgetInvalid && maxPossibleTotal !== null && maxPossibleTotal < form.budget_min
   const addTag = (key, value) => set(key, [...new Set([...tagsFor(form, key), value.trim()])].filter(Boolean).join(', '))
@@ -192,17 +195,18 @@ export function App({ onBackToLanding }) {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-[#e5dbd2] bg-[#f9f4ed]">
+      <header className="border-b border-[#e6d6ea] bg-[#f5ebf4]">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-3 lg:px-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#bd285c] text-white serif text-lg">d</div>
-            <div>
-              <div className="serif text-[19px] leading-none text-[#352e2b]">dream a dozen</div>
-              <div className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-[#9b8f87]">BD toolkit</div>
+          {hideBrand ? <span /> : (
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#844292] text-white serif text-lg">d</div>
+              <div>
+                <div className="serif text-[19px] leading-none text-[#301736]">dream a dozen</div>
+                <div className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-[#8a7690]">BD toolkit</div>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-3 text-[13px] text-[#766b64]">
-            {onBackToLanding && <button type="button" className="pill" onClick={onBackToLanding}>&larr; Switch flow</button>}
+          )}
+          <div className="flex items-center gap-3 text-[13px] text-[#6b5570]">
             <span className="hidden sm:inline">Internal use only</span>
             <span className="h-2 w-2 rounded-full bg-[#5d9c78]" />
             <span>Catalog ready</span>
@@ -214,20 +218,20 @@ export function App({ onBackToLanding }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-6 py-5 lg:px-10 lg:py-6">
-        <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-end">
+      <main className="mx-auto max-w-[1440px] px-6 py-3 lg:px-10 lg:py-4">
+        <div className="mb-3 flex flex-col justify-between gap-3 md:flex-row md:items-end">
           <div>
-            <p className="mb-1 text-[11px] font-bold uppercase tracking-[.2em] text-[#bd285c]">Corporate gifting / new brief</p>
-            <h1 className="serif text-2xl leading-tight text-[#302a27] md:text-[28px]">
-              Build a thoughtful <span className="text-[#bd285c]">snack box.</span>
+            <p className="mb-0.5 text-[11px] font-bold uppercase tracking-[.2em] text-[#844292]">Corporate gifting / new brief</p>
+            <h1 className="serif text-xl leading-tight text-[#301736] md:text-2xl">
+              Build a thoughtful <span className="text-[#c22026]">snack box.</span>
             </h1>
           </div>
-          <div className="max-w-sm text-xs leading-5 text-[#766b64]">
+          <div className="max-w-sm text-xs leading-5 text-[#6b5570]">
             Set the brief once. We'll surface combinations your client can actually use - priced with a little breathing room.
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,560px)_1fr] xl:grid-cols-[600px_1fr]">
           <BriefWizard
             budgetInvalid={budgetInvalid}
             budgetTooHighForItems={budgetTooHighForItems}
@@ -261,7 +265,7 @@ export function App({ onBackToLanding }) {
         </div>
       </main>
 
-      <footer className="mx-auto max-w-[1440px] px-6 pb-4 text-xs text-[#a39891] lg:px-10">
+      <footer className="mx-auto max-w-[1440px] px-6 pb-4 text-xs text-[#8a7690] lg:px-10">
         Dream a Dozen - Business development workspace
       </footer>
 

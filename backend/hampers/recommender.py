@@ -11,6 +11,7 @@ what's intentionally deferred (smarter container selection, etc).
 
 import itertools
 import math
+import re
 from dataclasses import dataclass
 
 try:
@@ -79,6 +80,17 @@ PREFERRED_OPTIONAL_CATEGORIES = {"Nuts"}
 # terms instead gives a fixed, predictable crossover regardless of baseline.
 NUTS_UTILISATION_TOLERANCE = 0.03
 
+# 2026-09-02 stakeholder rule, resolved: every hamper must include a
+# greeting card, no exceptions, and it counts toward price/budget/fill like
+# any other item - the total (container + items, greeting card included)
+# still cannot exceed budget_max. Routed through the existing
+# mandatory-item pipeline (see mandatory_names below), which already
+# enforces exactly that: mandatory items' cost is added to the budget
+# check before any optional items are chosen, so the cap is never
+# exceeded. "Greeting Card" is a real catalog item (Merchandise, ~Rs 12).
+GREETING_CARD_MANDATORY = True
+GREETING_CARD_ITEM_NAME = "Greeting Card"
+
 # A hamper where the container itself eats most of the budget, leaving only
 # a token amount for actual product, is technically valid but not a good
 # recommendation. Require the item content to be worth at least this
@@ -112,6 +124,64 @@ CURRENCY_DECIMALS = 2
 # hexagonal box, driven entirely by the catalog's Primary/Secondary
 # Packaging columns (see catalog_loader.py) - never by product name.
 HEXAGON_PACKAGING_KEYWORD = "hexagon"
+
+# Packaging-field keyword that generically identifies an item as a tin,
+# same convention as HEXAGON_PACKAGING_KEYWORD above (2026-09-02 stakeholder
+# rule: "if a box already contains a hexagon box of an item, do not add a
+# tin of that same item" - see _base_product_key / _has_variant_clash).
+TIN_PACKAGING_KEYWORD = "tin"
+
+# Strips packaging-format words (hexagon/tin, optionally followed by a
+# weight like "70g") and weight-only tokens from a product name so that
+# "Achari Aam Crackers Hexagon 70g" and "Achari Aam Crackers Tin 100g"
+# reduce to the same base product key. Order matters: the packaging-word
+# pattern runs first (it also consumes a trailing weight), then the
+# standalone-weight pattern mops up any weight left over (e.g. "Tin100g"
+# with no space, or a weight with no packaging word at all).
+_PACKAGING_WORD_RE = re.compile(r"\b(?:hexagon|tin)\s*\d*\s*g?\b", re.IGNORECASE)
+_WEIGHT_RE = re.compile(r"\b\d+\s*g\b", re.IGNORECASE)
+
+
+def _base_product_key(name: str) -> str:
+    text = name.lower()
+    text = _PACKAGING_WORD_RE.sub(" ", text)
+    text = _WEIGHT_RE.sub(" ", text)
+    return " ".join(text.split())
+
+
+def _is_tin(item: HamperItem) -> bool:
+    """Same generic, packaging-field-driven convention as _is_hexagonal_box -
+    never by product name."""
+    packaging = f"{item.primary_packaging} {item.secondary_packaging}".lower()
+    return TIN_PACKAGING_KEYWORD in packaging
+
+
+def _has_variant_clash(items: list[HamperItem]) -> bool:
+    """True if the candidate contains both a hexagonal-box SKU and a tin SKU
+    of the same underlying product (2026-09-02 stakeholder rule). Matched by
+    base product name after stripping the packaging-format word and any
+    weight, not by an explicit pair list, so it applies uniformly as the
+    catalog grows."""
+    by_key: dict[str, set[str]] = {}
+    for item in items:
+        if not (_is_hexagonal_box(item) or _is_tin(item)):
+            continue
+        key = _base_product_key(item.name)
+        formats = by_key.setdefault(key, set())
+        formats.add("hexagon" if _is_hexagonal_box(item) else "tin")
+    return any(formats == {"hexagon", "tin"} for formats in by_key.values())
+
+
+def _has_duplicate_item(items: list[HamperItem]) -> bool:
+    """True if the exact same catalog item (by normalized name) appears more
+    than once in the candidate (2026-09-02 stakeholder rule for Merchandise,
+    applied generically - the catalog has at least one literal duplicate row
+    ["Khara Cookies 20g Pouch" appears twice with different prices], so this
+    also closes a real gap, not just the Merchandise case that prompted it).
+    Pairing different Merchandise items, or Merchandise with candles, is
+    unaffected - only an exact repeat of the same item is rejected."""
+    names = [_normalized(item.name) for item in items]
+    return len(names) != len(set(names))
 
 
 def _round_currency(value: float) -> float:
@@ -565,6 +635,8 @@ def _generate_candidates_for_container(
         return []
 
     mandatory_names = {_normalized(name) for name in request.mandatory_products}
+    if GREETING_CARD_MANDATORY:
+        mandatory_names = mandatory_names | {_normalized(GREETING_CARD_ITEM_NAME)}
     excluded_names = {_normalized(name) for name in request.excluded_products}
 
     conflicting = mandatory_names & excluded_names
@@ -587,6 +659,9 @@ def _generate_candidates_for_container(
         if _individually_fits(item, container) is False:
             reasons.append(f"Must-include '{item.name}' does not fit in container '{container.name}'.")
             return []
+    if _has_duplicate_item(mandatory_items) or _has_variant_clash(mandatory_items):
+        reasons.append("Must-include items conflict with each other (duplicate item, or a hexagon/tin of the same product).")
+        return []
 
     mandatory_total = _round_currency(sum(item.price for item in mandatory_items))
     if _round_currency(container.price + mandatory_total) > request.budget_max:
@@ -683,6 +758,8 @@ def _generate_candidates_for_container(
                     continue
 
                 all_items = mandatory_items + list(combo)
+                if _has_duplicate_item(all_items) or _has_variant_clash(all_items):
+                    continue
                 total_price = _round_currency(container.price + content_value)
                 if total_price > request.budget_max:
                     continue
