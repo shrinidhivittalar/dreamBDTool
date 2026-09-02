@@ -203,6 +203,29 @@ def _matches_any(item: HamperItem, names: set[str]) -> bool:
     return _normalized(item.name) in names
 
 
+def _item_allowed_in_container(
+    item: HamperItem,
+    container: HamperContainer,
+    eligible_container_names: frozenset[str] | None,
+) -> bool:
+    """Per-container curation gate (2026-09-03 catalog "yes"/"no" columns),
+    independent of and in addition to the physical dimension checks below.
+    `eligible_container_names` is the set of containers the catalog actually
+    has eligibility data for at all - a container outside it (e.g. the
+    sheet's gap for "10 x 10 x 3 w cavity - Jaipur palace") has no
+    eligibility filter applied, not "everything excluded". Similarly, an
+    item with `allowed_containers is None` has no data for it and is
+    unconstrained. Defaults to no-op (True for everything) when
+    `eligible_container_names` itself is None/empty, so callers that don't
+    pass catalog-sourced eligibility data (all pre-existing tests, and any
+    caller building HamperItem/HamperContainer by hand) are unaffected."""
+    if not eligible_container_names or container.name not in eligible_container_names:
+        return True
+    if item.allowed_containers is None:
+        return True
+    return container.name in item.allowed_containers
+
+
 def _item_dims(entity: HamperContainer | HamperItem) -> tuple[float, float, float] | None:
     if entity.length_in is None or entity.breadth_in is None or entity.height_in is None:
         return None
@@ -630,6 +653,7 @@ def _generate_candidates_for_container(
     items: list[HamperItem],
     request: HamperRequest,
     reasons: list[str],
+    eligible_container_names: frozenset[str] | None = None,
 ) -> list[_Candidate]:
     if container.price > request.budget_max:
         return []
@@ -659,6 +683,9 @@ def _generate_candidates_for_container(
         if _individually_fits(item, container) is False:
             reasons.append(f"Must-include '{item.name}' does not fit in container '{container.name}'.")
             return []
+        if not _item_allowed_in_container(item, container, eligible_container_names):
+            reasons.append(f"Must-include '{item.name}' is not offered in container '{container.name}'.")
+            return []
     if _has_duplicate_item(mandatory_items) or _has_variant_clash(mandatory_items):
         reasons.append("Must-include items conflict with each other (duplicate item, or a hexagon/tin of the same product).")
         return []
@@ -675,6 +702,7 @@ def _generate_candidates_for_container(
         if not _matches_any(item, mandatory_names) and not _matches_any(item, excluded_names)
         and (not request.preferred_categories or item.category in request.preferred_categories)
         and _individually_fits(item, container) is not False
+        and _item_allowed_in_container(item, container, eligible_container_names)
     ]
 
     remaining_budget = request.budget_max - container.price - mandatory_total
@@ -804,6 +832,7 @@ def recommend_hampers(
     containers: list[HamperContainer],
     items: list[HamperItem],
     request: HamperRequest,
+    eligible_container_names: frozenset[str] | None = None,
 ) -> HamperSearchResult:
     reasons: list[str] = []
     all_candidates: list[tuple[_Candidate, HamperFitStatus, float]] = []
@@ -822,7 +851,7 @@ def recommend_hampers(
     required_categories = applicable_categories - OPTIONAL_CATEGORIES
 
     for container in containers:
-        for candidate in _generate_candidates_for_container(container, items, request, reasons):
+        for candidate in _generate_candidates_for_container(container, items, request, reasons, eligible_container_names):
             fit_status = _fit_status(candidate.container, candidate.items)
             if not fit_status.fits:
                 continue

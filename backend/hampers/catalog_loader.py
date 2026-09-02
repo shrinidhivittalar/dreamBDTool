@@ -59,6 +59,13 @@ class HamperCatalogLoadResult:
     containers: list[HamperContainer]
     items: list[HamperItem]
     report: HamperCatalogValidationReport
+    # Container names that have a dedicated per-container eligibility
+    # column in the source sheet (2026-09-03 "which containers can this
+    # item go in" columns) - a container NOT in this set has no eligibility
+    # data at all (e.g. the sheet gap for "10 x 10 x 3 w cavity - Jaipur
+    # palace"), so recommend_hampers() must skip the eligibility filter for
+    # it entirely rather than treat every item as excluded there.
+    eligible_container_names: frozenset[str] = field(default_factory=frozenset)
 
 
 def _find_column(frame: pd.DataFrame, aliases: list[str]) -> str | None:
@@ -105,6 +112,19 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
         raise ValueError("Hamper catalog must contain an item name and price column")
 
     columns = {key: _find_column(frame, aliases) for key, aliases in COLUMN_ALIASES.items()}
+
+    # Per-container eligibility columns (2026-09-03): any column that isn't
+    # one of the recognized fields above and isn't blank/pandas'
+    # auto-generated "Unnamed: N" for a genuinely empty header. Their header
+    # text IS the container's name, by the sheet's own design - the same
+    # string that appears in the Items column for that container's row.
+    known_columns = {name_column, category_column} | {v for v in columns.values() if v}
+    eligibility_columns = [
+        column for column in frame.columns
+        if column not in known_columns
+        and str(column).strip() != ""
+        and not str(column).strip().lower().startswith("unnamed")
+    ]
 
     containers: list[HamperContainer] = []
     items: list[HamperItem] = []
@@ -163,6 +183,15 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
                 _text(row[columns["upright_only"]]).strip().lower() in TRUE_VALUES
                 if columns["upright_only"] else False
             )
+            if eligibility_columns:
+                eligibility_values = {column: _text(row[column]).strip().lower() for column in eligibility_columns}
+                has_any_eligibility_data = any(value != "" for value in eligibility_values.values())
+                allowed_containers = (
+                    frozenset(column for column, value in eligibility_values.items() if value in TRUE_VALUES)
+                    if has_any_eligibility_data else None
+                )
+            else:
+                allowed_containers = None
             # The sheet's "Category" column only distinguishes container vs
             # item rows ("Hamper Box" / "Inside item") - it's not a real
             # product category. The actual category (Food / Merchandise /
@@ -181,6 +210,7 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
                 primary_packaging=primary_packaging,
                 secondary_packaging=secondary_packaging,
                 upright_only=upright_only,
+                allowed_containers=allowed_containers,
             ))
 
     report = HamperCatalogValidationReport(
@@ -191,7 +221,12 @@ def load_hamper_catalog(path: str | Path, source_name: str | None = None) -> Ham
         skipped_rows=skipped_rows,
         duplicate_names=duplicate_names,
     )
-    return HamperCatalogLoadResult(containers=containers, items=items, report=report)
+    return HamperCatalogLoadResult(
+        containers=containers,
+        items=items,
+        report=report,
+        eligible_container_names=frozenset(str(column) for column in eligibility_columns),
+    )
 
 
 def load_hamper_catalog_bytes(payload: bytes, filename: str = "hampers.csv") -> HamperCatalogLoadResult:

@@ -43,6 +43,14 @@ class HamperItem(BaseModel):
     primary_packaging: str = ""
     secondary_packaging: str = ""
     upright_only: bool = False
+    # Which containers this item is curated/allowed to go in, per the
+    # catalog's per-container "yes"/"no" eligibility columns (2026-09-03) -
+    # a business/styling decision independent of physical fit. None means
+    # no eligibility data was present for this item at all (e.g. it
+    # predates those columns), so it's treated as unconstrained rather than
+    # wrongly excluded everywhere. An empty frozenset is a real, meaningful
+    # "not curated for any container" signal, distinct from None.
+    allowed_containers: frozenset[str] | None = None
 
     @property
     def volume_in3(self) -> float | None:

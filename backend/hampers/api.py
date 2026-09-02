@@ -56,4 +56,4 @@ def hamper_catalog_status() -> dict[str, object]:
 @router.post("/recommendations", response_model=HamperSearchResult)
 def create_hamper_recommendations(request: HamperRequest) -> HamperSearchResult:
     catalog = _get_catalog()
-    return recommend_hampers(catalog.containers, catalog.items, request)
+    return recommend_hampers(catalog.containers, catalog.items, request, catalog.eligible_container_names)
