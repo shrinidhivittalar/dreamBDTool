@@ -18,11 +18,27 @@ try:
     from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
     from .models import HamperRequest, HamperSearchResult
     from .recommender import recommend_hampers
-    from ..stats import record_hamper_recommendation
 except ImportError:
     from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
     from models import HamperRequest, HamperSearchResult
     from recommender import recommend_hampers
+
+# Isolated from the try/except above on purpose: ..stats reaches outside
+# the hampers package (up to backend/stats.py), which fails differently
+# depending on how the app is launched - `uvicorn backend.app:app` from the
+# repo root makes it a valid parent-package-relative import, but Render's
+# actual run command (`uvicorn app:app` from inside backend/) has no
+# parent package for hampers.api at all, so ..stats raises immediately.
+# Bundling it into the block above meant that failure aborted the whole
+# try, which fell through to a bare `from catalog_loader import ...` that
+# collides with the snack-box's own backend/catalog_loader.py (same bare
+# module name, already cached under it) - a real deploy break, not
+# hypothetical. Keeping this in its own try/except means a stats-import
+# fallback can never drag the catalog/model/recommender imports down with
+# it again.
+try:
+    from ..stats import record_hamper_recommendation
+except ImportError:
     from stats import record_hamper_recommendation
 
 # Repo root is three levels up from this file (backend/hampers/api.py).
