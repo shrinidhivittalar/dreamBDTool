@@ -12,3 +12,8 @@ __pycache__/
 
 # Session handoff notes (local reference only, not for the repo)
 SESSION_NOTES_*.md
+
+# Usage counters (internal-only, see backend/stats.py) - never committed,
+# unlike the product catalog cache, since this is meant to be visible only
+# via the gated /api/stats endpoint, never in git history.
+.cache/usage_stats.json

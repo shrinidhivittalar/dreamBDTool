@@ -3,7 +3,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
@@ -24,6 +24,7 @@ try:
     from .recommender import recommend
     from .recommender_constraints import find_customization_addon
     from .recommender_rules import _fuzzy_matches, _matches, _normalized_text
+    from .stats import get_stats, record_snack_box_recommendation, record_visit
     from .validator import blocking_errors, validate_recommendations
 except ImportError:
     from hampers.api import router as hampers_router
@@ -43,6 +44,7 @@ except ImportError:
     from recommender import recommend
     from recommender_constraints import find_customization_addon
     from recommender_rules import _fuzzy_matches, _matches, _normalized_text
+    from stats import get_stats, record_snack_box_recommendation, record_visit
     from validator import blocking_errors, validate_recommendations
 
 
@@ -245,6 +247,29 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# --- Usage stats (internal-only, not linked anywhere in the UI) ----------
+#
+# STATS_ACCESS_KEY gates /api/stats: without a matching key, the endpoint
+# returns 404 (not 403), so probing for it doesn't even confirm it exists.
+# If the env var isn't set at all, /api/stats is unreachable outright - it
+# fails closed, never silently open. /api/visit has no gate since it only
+# accepts writes (increments a counter), nothing to read.
+STATS_ACCESS_KEY = os.environ.get("STATS_ACCESS_KEY")
+
+
+@app.post("/api/visit")
+def track_visit() -> dict[str, bool]:
+    record_visit()
+    return {"ok": True}
+
+
+@app.get("/api/stats")
+def read_stats(x_stats_key: str | None = Header(default=None)) -> dict[str, int]:
+    if not STATS_ACCESS_KEY or x_stats_key != STATS_ACCESS_KEY:
+        raise HTTPException(status_code=404)
+    return get_stats()
+
+
 @app.get("/api/products", response_model=list[Product])
 def list_products() -> list[Product]:
     return data_provider.get_products()
@@ -293,6 +318,7 @@ def parse_intent_endpoint(request: IntentParseRequest) -> IntentParseResponse:
 
 @app.post("/api/intent/recommendations", response_model=RecommendationResponse)
 def recommendations_from_intent(request: IntentParseRequest) -> RecommendationResponse:
+    record_snack_box_recommendation()
     parsed = parse_intent_response(
         request.text,
         default_item_count=request.default_item_count,
@@ -315,6 +341,7 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
 
 @app.post("/api/recommendations", response_model=RecommendationResponse)
 def create_recommendations(request: RecommendationRequest) -> RecommendationResponse:
+    record_snack_box_recommendation()
     products = data_provider.get_products()
     messages: list[str] = []
     try:

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { App } from './App'
 import { HamperFlow } from './hampers/HamperFlow'
 import { Sidebar } from './Sidebar'
+
+const API = import.meta.env.VITE_API_URL || ''
 
 // Persistent sidebar replaces the old landing-page fork: Snack Box and
 // Hamper are still separate flows/pipelines internally (matches the
@@ -10,6 +12,13 @@ import { Sidebar } from './Sidebar'
 // product; Hamper is reached via the sidebar like Snack Box always was.
 export function Shell() {
   const [flow, setFlow] = useState('snackbox')
+
+  // Fire-and-forget usage counter, once per app load - no UI anywhere
+  // reads or displays this (see backend/stats.py). Never blocks or
+  // surfaces an error to the user; a failed count just doesn't count.
+  useEffect(() => {
+    fetch(`${API}/api/visit`, { method: 'POST' }).catch(() => {})
+  }, [])
 
   return (
     <div className="flex h-screen overflow-hidden">

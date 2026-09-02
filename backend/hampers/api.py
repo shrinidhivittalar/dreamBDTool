@@ -18,10 +18,12 @@ try:
     from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
     from .models import HamperRequest, HamperSearchResult
     from .recommender import recommend_hampers
+    from ..stats import record_hamper_recommendation
 except ImportError:
     from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
     from models import HamperRequest, HamperSearchResult
     from recommender import recommend_hampers
+    from stats import record_hamper_recommendation
 
 # Repo root is three levels up from this file (backend/hampers/api.py).
 DEFAULT_CATALOG_PATH = (
@@ -55,5 +57,6 @@ def hamper_catalog_status() -> dict[str, object]:
 
 @router.post("/recommendations", response_model=HamperSearchResult)
 def create_hamper_recommendations(request: HamperRequest) -> HamperSearchResult:
+    record_hamper_recommendation()
     catalog = _get_catalog()
     return recommend_hampers(catalog.containers, catalog.items, request, catalog.eligible_container_names)
