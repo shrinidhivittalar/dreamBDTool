@@ -84,15 +84,17 @@ export function HamperCard({ recommendation, index }) {
       </div>
 
       <div className="px-4 pt-2">
-        {items.slice(0, 3).map(item => (
-          <div key={item.name} className="flex items-center gap-1.5 py-0.5 text-[13px]" style={{ color: 'var(--dad-ink-soft, #4b423d)' }}>
-            <span aria-hidden="true">·</span>
-            <span>{item.name}</span>
+        {items.map(item => (
+          <div key={item.name} className="flex items-center justify-between gap-1.5 py-0.5 text-[13px]" style={{ color: 'var(--dad-ink-soft, #4b423d)' }}>
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden="true">·</span>
+              <span>{item.name}</span>
+            </span>
+            {item.price != null && (
+              <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>{money(item.price)}</span>
+            )}
           </div>
         ))}
-        {items.length > 3 && (
-          <div className="pt-0.5 text-[12px] font-semibold" style={{ color: 'var(--dad-accent, #a5690a)' }}>+ {items.length - 3} more items</div>
-        )}
       </div>
 
       <div className="mt-3 px-4 pb-3.5">
@@ -113,11 +115,13 @@ export function HamperCard({ recommendation, index }) {
           <CategoryCoverage composition={composition} />
         </div>
 
-        {/* Static for now - expand-to-detail isn't wired up yet (known gap,
-            tracked separately), so this is a label, not a clickable button. */}
-        <div className="mt-2.5 text-right text-[11px] font-semibold" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>
-          View Details ⌄
-        </div>
+        {recommendation.explanation.length > 0 && (
+          <div className="mt-2.5 border-t pt-2.5" style={{ borderColor: 'var(--dad-border, #eee5dd)' }}>
+            {recommendation.explanation.map((line, i) => (
+              <p key={i} className="py-0.5 text-[11px]" style={{ color: 'var(--dad-ink-soft, #6b5570)' }}>{line}</p>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )

@@ -170,6 +170,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .brand-dad .option-card { border-left-color: var(--dad-accent) !important; }
 
 /* Sidebar */
+.dad-shell { display: flex; height: 100vh; overflow: hidden; }
 .dad-sidebar { width: 240px; flex-shrink: 0; background: #220f28; color: #f5ebf4; display: flex; flex-direction: column; height: 100vh; }
 .dad-sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 22px 20px 18px; }
 .dad-sidebar-wordmark { font-family: 'Lora', Georgia, serif; font-size: 17px; line-height: 1.1; color: #f6ecf8; }
@@ -196,8 +197,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .dad-progress-track { height: 6px; border-radius: 99px; background: var(--dad-accent-soft, #f3e8f6); overflow: hidden; }
 .dad-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--dad-accent, #844292); transition: width 200ms ease; }
 @media (max-width: 900px) {
-  .dad-sidebar { width: 100%; min-height: auto; flex-direction: row; align-items: center; justify-content: space-between; }
+  .dad-shell { flex-direction: column; }
+  .dad-sidebar { width: 100%; height: auto; min-height: auto; flex-shrink: 0; flex-direction: row; align-items: center; justify-content: space-between; }
   .dad-sidebar-nav { flex-direction: row; padding: 8px 12px; }
   .dad-sidebar-footer { display: none; }
+  .dad-main { height: auto; flex: 1; min-height: 0; }
 }
 

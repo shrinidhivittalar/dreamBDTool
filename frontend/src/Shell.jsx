@@ -21,7 +21,7 @@ export function Shell() {
   }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="dad-shell">
       <Sidebar flow={flow} onSelect={setFlow} />
 
       <div className="dad-main">
