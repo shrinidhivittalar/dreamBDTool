@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { HamperWizard } from './HamperWizard'
 import { HamperResultsPanel } from './HamperResultsPanel'
 import { initialHamperForm, hamperCategories } from '../config/hamper'
-import { fetchHamperCatalogStatus, fetchHamperRecommendations } from '../lib/hamperApi'
+import { fetchHamperCatalogStatus, fetchHamperProducts, fetchHamperRecommendations, uploadHamperCatalog } from '../lib/hamperApi'
 
 export function HamperFlow() {
   const [form, setForm] = useState(initialHamperForm)
@@ -11,12 +11,31 @@ export function HamperFlow() {
   const [message, setMessage] = useState('')
   const [catalogStatus, setCatalogStatus] = useState(null)
   const [productNames, setProductNames] = useState([])
+  const [uploading, setUploading] = useState(false)
+
+  function refreshCatalogInfo() {
+    fetchHamperCatalogStatus().then(setCatalogStatus).catch(() => {})
+    fetchHamperProducts().then(setProductNames).catch(() => {})
+  }
 
   useEffect(() => {
-    fetchHamperCatalogStatus()
-      .then(status => setCatalogStatus(status))
-      .catch(() => {})
+    refreshCatalogInfo()
   }, [])
+
+  async function uploadCatalog(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      await uploadHamperCatalog(file)
+      refreshCatalogInfo()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setUploading(false)
+      event.target.value = ''
+    }
+  }
 
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   // Same guard as the snack-box wizard: an empty category selection means
@@ -68,8 +87,10 @@ export function HamperFlow() {
         loading={loading}
         onGenerate={generate}
         onSet={set}
+        onUploadCatalog={uploadCatalog}
         productNames={productNames}
         toggleCategory={toggleCategory}
+        uploading={uploading}
       />
       <HamperResultsPanel loading={loading} message={message} result={result} />
     </div>

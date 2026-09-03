@@ -6,6 +6,29 @@ export async function fetchHamperCatalogStatus() {
   return response.json()
 }
 
+export async function fetchHamperProducts() {
+  const response = await fetch(`${API}/api/hampers/products`)
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  return response.json()
+}
+
+export async function uploadHamperCatalog(file) {
+  const response = await fetch(`${API}/api/hampers/catalog/upload`, {
+    method: 'POST',
+    headers: { 'x-filename': file.name },
+    body: await file.arrayBuffer(),
+  })
+  if (!response.ok) {
+    let detail = null
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {}
+    throw new Error(detail || `Upload failed (${response.status})`)
+  }
+  return response.json()
+}
+
 export async function fetchHamperRecommendations(payload) {
   let response
   try {

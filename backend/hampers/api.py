@@ -3,23 +3,23 @@ separate on purpose so the two domains don't blend into one file (matches
 shared/snack_boxes/hampers architecture). app.py includes this router with
 one line rather than defining hamper routes itself.
 
-Data loading here is deliberately minimal: the hamper catalog is loaded
-once from the checked-in giftbox_data CSV. No daily-refresh/upload
-machinery yet - that's snack-box-specific infra in data_provider.py, and
-building a hamper equivalent now would be premature (see PHASE1_HAMPERS.md
-Phase 5) until there's a real need to keep the catalog current from Zoho.
+Manual catalog upload mirrors the snack-box pattern in data_provider.py
+(cache-to-disk so a plain restart keeps the uploaded data, same ephemeral-
+disk-on-redeploy caveat) - no Zoho/daily-refresh equivalent, since hampers
+still has no automated source to pull from (see PHASE1_HAMPERS.md Phase 5).
 """
 
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 try:
-    from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
+    from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
     from .models import HamperRequest, HamperSearchResult
     from .recommender import recommend_hampers
 except ImportError:
-    from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog
+    from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
     from models import HamperRequest, HamperSearchResult
     from recommender import recommend_hampers
 
@@ -45,18 +45,38 @@ except ImportError:
 DEFAULT_CATALOG_PATH = (
     Path(__file__).resolve().parents[2] / "giftbox_data" / "Input Data - Quotations Tool_Hampers.csv"
 )
+# No suffix here on purpose - the actual cache file's extension is derived
+# from whatever the uploaded file's extension was (see _cache_file), since
+# the loader dispatches on suffix (.csv vs .xlsx/.xls).
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[2] / ".cache" / "hamper_catalog"
+CACHE_PATH = Path(os.environ.get("HAMPER_CATALOG_CACHE_PATH", str(DEFAULT_CACHE_PATH)))
 
 router = APIRouter(prefix="/api/hampers", tags=["hampers"])
 
 _catalog: HamperCatalogLoadResult | None = None
 
 
+def _cache_file(filename: str | None = None) -> Path:
+    if CACHE_PATH.suffix:
+        return CACHE_PATH
+    suffix = Path(filename or "hampers.csv").suffix or ".csv"
+    return CACHE_PATH.with_suffix(suffix)
+
+
 def _get_catalog() -> HamperCatalogLoadResult:
     global _catalog
     if _catalog is None:
-        if not DEFAULT_CATALOG_PATH.exists():
+        # An uploaded catalog (cached to disk) takes priority over the
+        # checked-in default, same rule as the snack-box data provider - a
+        # plain server restart after an upload should not silently revert
+        # to the old bundled sheet.
+        cache_file = _cache_file()
+        if cache_file.exists():
+            _catalog = load_hamper_catalog(cache_file, source_name=cache_file.name)
+        elif DEFAULT_CATALOG_PATH.exists():
+            _catalog = load_hamper_catalog(DEFAULT_CATALOG_PATH)
+        else:
             raise HTTPException(status_code=503, detail="Hamper catalog data is not available.")
-        _catalog = load_hamper_catalog(DEFAULT_CATALOG_PATH)
     return _catalog
 
 
@@ -68,6 +88,50 @@ def hamper_catalog_status() -> dict[str, object]:
         "container_count": catalog.report.container_count,
         "item_count": catalog.report.item_count,
         "warnings": catalog.report.warnings,
+    }
+
+
+@router.get("/products", response_model=list[str])
+def list_hamper_products() -> list[str]:
+    """Item names only, for the mandatory/excluded product autocomplete -
+    mirrors the snack-box GET /api/products used the same way, just without
+    the full Product payload since the dropdown only needs names."""
+    catalog = _get_catalog()
+    return sorted(item.name for item in catalog.items)
+
+
+@router.post("/catalog/upload")
+async def upload_hamper_catalog(request: Request) -> dict[str, object]:
+    global _catalog
+    payload = await request.body()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Upload body is empty")
+    filename = request.headers.get("x-filename", "uploaded_hampers.csv")
+    try:
+        result = load_hamper_catalog_bytes(payload, filename=filename)
+    except (ValueError, RuntimeError) as error:
+        # Same reasoning as the snack-box upload endpoint: a missing
+        # required column or a file with zero valid rows is a business
+        # error the BD user needs to see and act on, not an opaque 500.
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if not result.containers or not result.items:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded catalog must contain at least one container and one item.",
+        )
+
+    cache_file = _cache_file(filename)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = cache_file.with_suffix(cache_file.suffix + ".tmp")
+    temp_path.write_bytes(payload)
+    temp_path.replace(cache_file)
+
+    _catalog = result
+    return {
+        "source_name": result.report.source_name,
+        "container_count": result.report.container_count,
+        "item_count": result.report.item_count,
+        "warnings": result.report.warnings,
     }
 
 

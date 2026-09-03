@@ -10,8 +10,10 @@ export function HamperWizard({
   loading,
   onGenerate,
   onSet,
+  onUploadCatalog,
   productNames,
   toggleCategory,
+  uploading,
 }) {
   return (
     <aside className="card wizard-card h-fit p-4 sm:p-5">
@@ -20,6 +22,12 @@ export function HamperWizard({
           <p className="wizard-kicker">New brief</p>
           <h2 className="serif mt-0.5 text-lg text-[#301736]">Create a hamper</h2>
         </div>
+        {onUploadCatalog && (
+          <label className="pill" style={{ cursor: uploading ? 'default' : 'pointer' }}>
+            {uploading ? 'Uploading...' : 'Upload catalog'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onUploadCatalog} disabled={uploading} />
+          </label>
+        )}
       </div>
 
       <Field label="Budget range" hint={catalogStatus ? `${catalogStatus.container_count} containers, ${catalogStatus.item_count} items in catalog` : undefined}>

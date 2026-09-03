@@ -17,3 +17,8 @@ SESSION_NOTES_*.md
 # unlike the product catalog cache, since this is meant to be visible only
 # via the gated /api/stats endpoint, never in git history.
 .cache/usage_stats.json
+
+# Hamper catalog upload cache (backend/hampers/api.py) - a runtime artifact
+# that gets rewritten on every manual upload/restart, same reasoning as the
+# usage counters above; giftbox_data/ already holds the checked-in source.
+.cache/hamper_catalog.*
