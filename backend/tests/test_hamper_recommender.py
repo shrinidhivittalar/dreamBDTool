@@ -145,7 +145,7 @@ def test_requesting_more_options_than_exist_returns_best_available_with_message(
 
     assert 0 < len(result.recommendations) < 5
     assert result.message
-    assert "Only" in result.message
+    assert "Found" in result.message
 
 
 def test_impossible_mandatory_item_gives_a_clear_reason():
@@ -394,7 +394,7 @@ def test_partial_coverage_options_are_never_returned_when_not_enough_full_covera
         assert rec.composition.is_full_category_coverage
         assert not rec.composition.missing_categories
     assert len(result.recommendations) < request.option_count
-    assert result.message and "requested 3" in result.message.lower()
+    assert result.message and "the 3 requested" in result.message.lower()
 
 
 def test_every_returned_recommendation_covers_all_applicable_categories():
@@ -417,9 +417,9 @@ def test_items_per_box_smaller_than_category_count_gives_impossibility_reason():
     assert result.recommendations == []
     assert result.message
     assert "items_per_box" not in result.message  # human-readable, not a field name
-    assert "1 item(s) per box" in result.message
+    assert "'Items per box' is set to 1" in result.message
     assert "2 categor" in result.message
-    assert "structurally impossible" in result.message
+    assert "raise 'Items per box'" in result.message
 
 
 def test_sufficient_items_per_box_but_zero_full_coverage_gives_different_reason():
@@ -431,7 +431,7 @@ def test_sufficient_items_per_box_but_zero_full_coverage_gives_different_reason(
 
     assert result.recommendations == []
     assert result.message
-    assert "structurally impossible" not in result.message
+    assert "raise 'Items per box'" not in result.message
     assert "items_per_box" not in result.message
     assert "category" in result.message.lower()
 

@@ -147,7 +147,7 @@ def test_items_per_box_below_real_catalog_category_count_is_structurally_impossi
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
     assert result.recommendations == []
-    assert result.message and "structurally impossible" in result.message
+    assert result.message and "raise 'Items per box'" in result.message
 
 
 def test_items_per_box_at_real_catalog_required_category_count_is_not_structurally_impossible(catalog):
@@ -164,7 +164,7 @@ def test_items_per_box_at_real_catalog_required_category_count_is_not_structural
     result = recommend_hampers(catalog.containers, catalog.items, request)
 
     if not result.recommendations:
-        assert result.message and "structurally impossible" not in result.message
+        assert result.message and "raise 'Items per box'" not in result.message
     for rec in result.recommendations:
         assert rec.composition.is_full_category_coverage
 

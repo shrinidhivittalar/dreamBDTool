@@ -505,11 +505,23 @@ def _score(candidate: _Candidate, budget_max: float, fit_status: HamperFitStatus
         single_item_share = max(item_prices) / item_total
         if single_item_share > MAX_SINGLE_ITEM_SHARE:
             composition_penalty += 4
-    if (
-        len(candidate.items) >= MIN_ITEMS_FOR_CATEGORY_CONCENTRATION_PENALTY
-        and distinct_categories <= 1
-    ):
-        composition_penalty += 3
+    if len(candidate.items) >= MIN_ITEMS_FOR_CATEGORY_CONCENTRATION_PENALTY:
+        category_tally: dict[str, int] = {}
+        for item in candidate.items:
+            if item.category:
+                category_tally[item.category] = category_tally.get(item.category, 0) + 1
+        if category_tally:
+            max_category_share = max(category_tally.values()) / len(candidate.items)
+            # Graduated, not a hard cap (2026-09-03 stakeholder direction:
+            # prefer an even spread across categories, don't forbid a
+            # lopsided box outright). A fully monocategory box (share=1.0)
+            # still gets the same ceiling penalty (3) the old binary check
+            # gave it; anything above "about half the box is one category"
+            # now also costs something, scaling smoothly up to that
+            # ceiling, so e.g. a 4-of-6 pileup is scored down without being
+            # as harshly penalised as a 6-of-6 one.
+            if max_category_share > 0.5:
+                composition_penalty += 3 * ((max_category_share - 0.5) / 0.5)
 
     # Fill-ratio bonus: candidates below MIN_REQUIRED_FILL_RATIO are already
     # hard-rejected in _fit_status and never reach scoring - every candidate
@@ -575,9 +587,19 @@ def _explanation(
 ) -> list[str]:
     utilisation = (candidate.total_price / budget_max * 100) if budget_max > 0 else 0
     distinct_categories = len(composition.category_counts)
+    required_covered = len(composition.applicable_categories) - len(composition.missing_categories)
+    optional_present = distinct_categories - required_covered
+    category_breakdown = f"{distinct_categories} categor{'y' if distinct_categories == 1 else 'ies'}"
+    # required_covered/optional_present clarify this line against the
+    # "Category coverage: X/Y - Complete" line below, which only counts
+    # hard-required categories (Food/Merchandise) - a box spanning 4
+    # categories total while still being "2/2 required - Complete" reads
+    # as a contradiction unless the two counts are explicitly reconciled.
+    if optional_present > 0:
+        category_breakdown += f" ({required_covered} required + {optional_present} optional)"
     lines = [
         f"Rs {candidate.total_price:.2f} / Rs {budget_max:.2f} used ({utilisation:.1f}%)",
-        f"{len(candidate.items)} item(s) across {distinct_categories} categor{'y' if distinct_categories == 1 else 'ies'}",
+        f"{len(candidate.items)} item(s) across {category_breakdown}",
     ]
     if fit_status.utilisation_ratio is not None:
         lines.append(f"Estimated fit: {fit_status.utilisation_ratio * 100:.0f}% of usable container capacity")
@@ -922,24 +944,26 @@ def recommend_hampers(
     if not recommendations:
         if required_categories and request.items_per_box is not None and request.items_per_box < len(required_categories):
             message_parts.append(
-                f"Requested {request.items_per_box} item(s) per box, but {len(required_categories)} "
-                f"categor{'y' if len(required_categories) == 1 else 'ies'} must each be represented - "
-                f"full category coverage is structurally impossible with that item count."
+                f"'Items per box' is set to {request.items_per_box}, but {len(required_categories)} "
+                f"categor{'y' if len(required_categories) == 1 else 'ies'} need to be covered - raise "
+                f"'Items per box' to at least {len(required_categories)}, or select fewer categories."
             )
         elif required_categories and all_candidates:
             message_parts.append(
-                "No hamper covering every applicable category could be found within the budget and "
-                "other constraints (must-include items, exclusions, or dimension compatibility)."
+                "No hamper could cover every selected category within this budget and your other settings "
+                "(must-include items, exclusions, or box sizing). Try a wider budget range, fewer selected "
+                "categories, or fewer must-include items."
             )
         else:
             message_parts.append(
-                reasons[0] if reasons else "No valid hamper found within the given budget and constraints."
+                reasons[0] if reasons else "No hamper could be put together within this budget and your other settings. Try a wider budget range or fewer constraints."
             )
     else:
         if len(recommendations) < request.option_count:
             message_parts.append(
-                f"Only {len(recommendations)} valid, sufficiently distinct hamper option(s) covering every "
-                f"applicable category could be found (requested {request.option_count})."
+                f"Found {len(recommendations)} good option(s) covering every selected category, fewer than "
+                f"the {request.option_count} requested - there weren't enough distinct combinations within "
+                f"this budget and your other settings. Try a wider budget range or a lower number of options."
             )
     message = " ".join(message_parts) or None
 
