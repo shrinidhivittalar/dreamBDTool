@@ -16,12 +16,12 @@ from fastapi import APIRouter, HTTPException, Request
 
 try:
     from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
-    from .models import HamperRequest, HamperSearchResult
-    from .recommender import recommend_hampers
+    from .models import HamperItem, HamperRequest, HamperSearchResult
+    from .recommender import MAX_ITEMS_PER_HAMPER, recommend_hampers
 except ImportError:
     from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
-    from models import HamperRequest, HamperSearchResult
-    from recommender import recommend_hampers
+    from models import HamperItem, HamperRequest, HamperSearchResult
+    from recommender import MAX_ITEMS_PER_HAMPER, recommend_hampers
 
 # Isolated from the try/except above on purpose: ..stats reaches outside
 # the hampers package (up to backend/stats.py), which fails differently
@@ -157,4 +157,40 @@ async def upload_hamper_catalog(request: Request) -> dict[str, object]:
 def create_hamper_recommendations(request: HamperRequest) -> HamperSearchResult:
     record_hamper_recommendation()
     catalog = _get_catalog()
-    return recommend_hampers(catalog.containers, catalog.items, request, catalog.eligible_container_names)
+    engine_request = request
+    items = catalog.items
+    if request.custom_items:
+        # Same "on top" rule as the snack-box side: custom items must not
+        # eat into the requested items-per-box count. None (unconstrained)
+        # needs no adjustment - the engine already treats forced items as
+        # reducing each candidate's optional slots, same as Must Include.
+        if request.items_per_box is not None:
+            total_slots = request.items_per_box + len(request.custom_items)
+            if total_slots > MAX_ITEMS_PER_HAMPER:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{request.items_per_box} item(s) per box plus {len(request.custom_items)} custom "
+                        f"item(s) is {total_slots}, above the {MAX_ITEMS_PER_HAMPER}-item maximum. "
+                        "Lower items per box or remove a custom item."
+                    ),
+                )
+        else:
+            total_slots = None
+        synthetic = [
+            HamperItem(
+                name=custom.name,
+                price=custom.price,
+                category=custom.category,
+                length_in=custom.length_in,
+                breadth_in=custom.breadth_in,
+                height_in=custom.height_in,
+            )
+            for custom in request.custom_items
+        ]
+        engine_request = request.model_copy(update={
+            "mandatory_products": [*request.mandatory_products, *(custom.name for custom in request.custom_items)],
+            "items_per_box": total_slots,
+        })
+        items = [*catalog.items, *synthetic]
+    return recommend_hampers(catalog.containers, items, engine_request, catalog.eligible_container_names)

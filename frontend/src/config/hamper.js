@@ -18,6 +18,11 @@ export const initialHamperForm = {
   // HamperRequest has no such distinction (mandatory_products is a plain list).
   mandatory_products: [],
   excluded_products_list: [],
+  // { name, price, category, length_in, breadth_in, height_in } entries -
+  // one-off products not in the catalog, added on top of the brief for
+  // this request only. Dimensions may be null (BD doesn't always have
+  // them) - see hampers/api.py::create_hamper_recommendations.
+  custom_items: [],
 }
 
 export const RUPEE = '₹'

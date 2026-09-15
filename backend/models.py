@@ -8,6 +8,16 @@ except ImportError:
     from recommender_config import MAX_OPTION_COUNT
 
 
+class CustomProduct(BaseModel):
+    """A one-off product that doesn't exist in the catalog, added by a BD
+    user for a single client's request. Only used to build a throwaway
+    Product for this one recommendation run (see app.py) - never persisted
+    to the catalog or reused across requests."""
+    name: str = Field(min_length=1)
+    price: float = Field(gt=0)
+    category: str
+
+
 class Product(BaseModel):
     name: str
     selling_price: float
@@ -56,6 +66,10 @@ class RecommendationRequest(BaseModel):
     # should get the White Chocolate Disc surcharge added, if present in a
     # recommended box.
     customize_products: list[str] = Field(default_factory=list)
+    # One-off products not in the catalog, forced into every returned box
+    # for this request only (see app.py::create_recommendations). Never
+    # written to the catalog or remembered for the next request.
+    custom_products: list[CustomProduct] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_budget_range(self) -> "RecommendationRequest":

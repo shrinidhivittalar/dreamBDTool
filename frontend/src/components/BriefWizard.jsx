@@ -1,3 +1,4 @@
+import { CustomItemField } from './CustomItemField'
 import { Field } from './Field'
 import { MultiSelect } from './MultiSelect'
 import { MustIncludeField } from './MustIncludeField'
@@ -11,10 +12,12 @@ export function BriefWizard({
   catalogRange,
   form,
   loading,
+  onAddCustomProduct,
   onAddMustInclude,
   onAddTag,
   onApplyCategoryPreset,
   onGenerate,
+  onRemoveCustomProduct,
   onRemoveMustInclude,
   onRemoveTag,
   onSet,
@@ -82,6 +85,14 @@ export function BriefWizard({
         </Field>
         <Field label="Exclude (optional)" hint="never include these">
           <TagField tags={tagsFor(form, 'excluded_products')} placeholder="e.g. Samosa" suggestions={productNames} onAdd={value => onAddTag('excluded_products', value)} onRemove={tag => onRemoveTag('excluded_products', tag)} />
+        </Field>
+        <Field label="Client-requested item not in our catalog (optional)" hint="added on top, for this brief only">
+          <CustomItemField
+            items={form.custom_products}
+            categories={categories}
+            onAdd={onAddCustomProduct}
+            onRemove={onRemoveCustomProduct}
+          />
         </Field>
         <label className="checkbox-row"><input type="checkbox" checked={form.include_themed_customised} onChange={e => onSet('include_themed_customised', e.target.checked)} /><span>Include themed or customised items</span></label>
         <Field label={`Number of options: ${form.option_count}`}>

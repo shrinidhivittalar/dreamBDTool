@@ -1,3 +1,4 @@
+import { CustomItemField } from '../components/CustomItemField'
 import { Field } from '../components/Field'
 import { MultiSelect } from '../components/MultiSelect'
 import { TagField } from '../components/TagField'
@@ -8,7 +9,9 @@ export function HamperWizard({
   catalogStatus,
   form,
   loading,
+  onAddCustomItem,
   onGenerate,
+  onRemoveCustomItem,
   onSet,
   onUploadCatalog,
   onViewCatalog,
@@ -111,6 +114,16 @@ export function HamperWizard({
           suggestions={productNames}
           onAdd={value => onSet('excluded_products_list', [...new Set([...form.excluded_products_list, value.trim()])].filter(Boolean))}
           onRemove={tag => onSet('excluded_products_list', form.excluded_products_list.filter(value => value !== tag))}
+        />
+      </Field>
+
+      <Field label="Client-requested item not in our catalog (optional)" hint="added on top, for this brief only">
+        <CustomItemField
+          items={form.custom_items}
+          categories={hamperCategories}
+          showDimensions
+          onAdd={onAddCustomItem}
+          onRemove={onRemoveCustomItem}
         />
       </Field>
 

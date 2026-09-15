@@ -55,6 +55,8 @@ export function HamperFlow() {
   // as invalid here (not coerced to 0) so Generate stays disabled until a
   // real number is entered, rather than silently submitting budget_min=0.
   const budgetInvalid = form.budget_min === '' || form.budget_max === '' || form.budget_min > form.budget_max
+  const addCustomItem = entry => set('custom_items', [...form.custom_items, entry])
+  const removeCustomItem = index => set('custom_items', form.custom_items.filter((_, i) => i !== index))
 
   async function generate() {
     setLoading(true)
@@ -67,6 +69,7 @@ export function HamperFlow() {
       preferred_categories: form.preferred_categories.length === hamperCategories.length ? [] : form.preferred_categories,
       mandatory_products: form.mandatory_products,
       excluded_products: form.excluded_products_list,
+      custom_items: form.custom_items,
     }
     try {
       const data = await fetchHamperRecommendations(payload)
@@ -87,7 +90,9 @@ export function HamperFlow() {
         catalogStatus={catalogStatus}
         form={form}
         loading={loading}
+        onAddCustomItem={addCustomItem}
         onGenerate={generate}
+        onRemoveCustomItem={removeCustomItem}
         onSet={set}
         onUploadCatalog={uploadCatalog}
         onViewCatalog={() => setCatalogPreviewOpen(true)}

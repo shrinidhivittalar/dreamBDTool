@@ -67,6 +67,8 @@ export function App({ hideBrand }) {
   const toggleMustIncludeMode = index => set('must_include', form.must_include.map((entry, i) =>
     i === index ? { ...entry, mode: entry.mode === 'preferred' ? 'must' : 'preferred' } : entry
   ))
+  const addCustomProduct = entry => set('custom_products', [...form.custom_products, entry])
+  const removeCustomProduct = index => set('custom_products', form.custom_products.filter((_, i) => i !== index))
 
   async function runGenerate() {
     setLoading(true)
@@ -241,10 +243,12 @@ export function App({ hideBrand }) {
             catalogRange={catalogRange}
             form={form}
             loading={loading}
+            onAddCustomProduct={addCustomProduct}
             onAddMustInclude={addMustInclude}
             onAddTag={addTag}
             onApplyCategoryPreset={applyCategoryPreset}
             onGenerate={generate}
+            onRemoveCustomProduct={removeCustomProduct}
             onRemoveMustInclude={removeMustInclude}
             onRemoveTag={removeTag}
             onSet={set}

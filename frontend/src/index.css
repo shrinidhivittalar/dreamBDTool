@@ -79,6 +79,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .catalog-preview-count { margin-top: 10px; font-size: 12px; color: #6b5570; text-align: right; }
 .brand-dad .catalog-preview-title { color: var(--dad-accent-strong); }
 .brand-dad .catalog-preview-table th { color: var(--dad-accent-strong); }
+.custom-item-tag { background: #f3e8f6; border-color: #e0c9e8; }
+.custom-item-form { margin-top: 8px; padding: 12px; border: 1px solid #e4dcd4; border-radius: 10px; background: #f9f4ed; display: flex; flex-direction: column; gap: 8px; }
+.custom-item-form-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.custom-item-form-row .input { flex: 1; min-width: 100px; }
+.custom-item-category-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+.custom-item-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.brand-dad .custom-item-form { background: var(--dad-bg); border-color: var(--dad-border); }
+.brand-dad .custom-item-tag { background: var(--dad-accent-soft); border-color: var(--dad-border); color: var(--dad-accent-strong); }
 .option-slider::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
 .option-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
 .segmented-control { display: flex; gap: 4px; padding: 4px; border: 1px solid #e4dcd4; border-radius: 10px; background: #f9f4ed; }

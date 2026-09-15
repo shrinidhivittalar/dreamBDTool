@@ -22,6 +22,7 @@ try:
     )
     from .pricing import pricing_engine
     from .recommender import recommend
+    from .recommender_config import MAX_ITEM_COUNT
     from .recommender_constraints import find_customization_addon
     from .recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from .stats import get_stats, record_snack_box_recommendation, record_visit
@@ -42,6 +43,7 @@ except ImportError:
     )
     from pricing import pricing_engine
     from recommender import recommend
+    from recommender_config import MAX_ITEM_COUNT
     from recommender_constraints import find_customization_addon
     from recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from stats import get_stats, record_snack_box_recommendation, record_visit
@@ -354,9 +356,39 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
 def create_recommendations(request: RecommendationRequest) -> RecommendationResponse:
     record_snack_box_recommendation()
     products = data_provider.get_products()
+    engine_request = request
+    pool = products
+    if request.custom_products:
+        # Custom items are added "on top" of the chosen item count, not
+        # eaten out of it - bump item_count so the real catalog picks stay
+        # at their requested size. None (any-size search) needs no
+        # adjustment - it already sweeps every size and forced items reduce
+        # each trial size's optional slots the same way Must Include does.
+        if request.item_count is not None:
+            total_slots = request.item_count + len(request.custom_products)
+            if total_slots > MAX_ITEM_COUNT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{request.item_count} item(s) plus {len(request.custom_products)} custom "
+                        f"item(s) is {total_slots}, above the {MAX_ITEM_COUNT}-item maximum. "
+                        "Lower the item count or remove a custom item."
+                    ),
+                )
+        else:
+            total_slots = None
+        synthetic = [
+            Product(name=custom.name, selling_price=custom.price, category=custom.category)
+            for custom in request.custom_products
+        ]
+        engine_request = request.model_copy(update={
+            "mandatory_products": [*request.mandatory_products, *(custom.name for custom in request.custom_products)],
+            "item_count": total_slots,
+        })
+        pool = [*products, *synthetic]
     messages: list[str] = []
     try:
-        recommendations = recommend(products, request, limit=request.option_count, messages=messages)
+        recommendations = recommend(pool, engine_request, limit=engine_request.option_count, messages=messages)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if messages:
@@ -365,7 +397,7 @@ def create_recommendations(request: RecommendationRequest) -> RecommendationResp
         message = "No valid combinations found for these requirements."
     else:
         message = None
-    return _validated_response(recommendations, request, products, message)
+    return _validated_response(recommendations, engine_request, products, message)
 
 
 @app.post("/api/recommendations/reprice", response_model=RepriceResponse)

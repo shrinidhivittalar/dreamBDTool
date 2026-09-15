@@ -63,6 +63,23 @@ class HamperItem(BaseModel):
         return self.length_in * self.breadth_in * self.height_in
 
 
+class HamperCustomItem(BaseModel):
+    """A one-off item that doesn't exist in the catalog, added by a BD user
+    for a single client's request. Only used to build a throwaway
+    HamperItem for this one recommendation run (see hampers/api.py) - never
+    persisted to the catalog or reused across requests. Dimensions are
+    optional - a BD user usually doesn't own/measure a product they don't
+    stock; leaving them blank falls back to the engine's existing
+    missing-dimension handling (fit shown as not fully verified) rather
+    than requiring a guess."""
+    name: str = Field(min_length=1)
+    price: float = Field(gt=0)
+    category: str
+    length_in: float | None = None
+    breadth_in: float | None = None
+    height_in: float | None = None
+
+
 class HamperRequest(BaseModel):
     budget_min: float = Field(gt=0)
     budget_max: float = Field(gt=0)
@@ -78,6 +95,10 @@ class HamperRequest(BaseModel):
     # frontend/src/config/hamper.js::MAX_HAMPER_OPTION_COUNT does for
     # option_count) rather than importing recommender.py into models.py.
     items_per_box: int | None = Field(default=None, ge=1, le=6)
+    # One-off items not in the catalog, forced into every returned hamper
+    # for this request only (see hampers/api.py::create_hamper_recommendations).
+    # Never written to the catalog or remembered for the next request.
+    custom_items: list[HamperCustomItem] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_budget_range(self) -> "HamperRequest":

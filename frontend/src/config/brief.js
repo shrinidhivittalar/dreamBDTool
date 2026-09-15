@@ -38,6 +38,11 @@ export const initialForm = {
   must_include: [],
   excluded_products: '',
   include_themed_customised: false,
+  // { name, price, category } entries - one-off products not in the
+  // catalog, added on top of the brief for this request only. See
+  // lib/briefForm.js::recommendationPayload for how these reach the
+  // backend's RecommendationRequest.custom_products.
+  custom_products: [],
 }
 
 export const RUPEE = '₹'
