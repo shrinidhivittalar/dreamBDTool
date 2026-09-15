@@ -1,6 +1,19 @@
 import { RecommendationCard } from './RecommendationCard'
 
-export function ResultsPanel({ catalogSize, lastBrief, loading, message, recommendations, onExport, exporting, onToggleCustomization, repricingIndices }) {
+export function ResultsPanel({
+  catalogSize,
+  exporting,
+  lastBrief,
+  loading,
+  message,
+  onExport,
+  onPromote,
+  onToggleCustomization,
+  promotedNames,
+  promotingName,
+  recommendations,
+  repricingIndices,
+}) {
   return (
     <section>
       <div className="mb-3 flex items-end justify-between gap-3">
@@ -44,11 +57,15 @@ export function ResultsPanel({ catalogSize, lastBrief, loading, message, recomme
           {recommendations.map((recommendation, index) => (
             <RecommendationCard
               key={index}
+              customProducts={lastBrief?.customProducts ?? []}
               recommendation={recommendation}
               index={index}
               mandatoryProducts={lastBrief?.mandatoryProducts ?? []}
               requiredCategories={lastBrief?.requiredCategories ?? []}
+              onPromote={onPromote}
               onToggleCustomization={onToggleCustomization}
+              promotedNames={promotedNames}
+              promotingName={promotingName}
               repricing={repricingIndices?.has(index) ?? false}
             />
           ))}

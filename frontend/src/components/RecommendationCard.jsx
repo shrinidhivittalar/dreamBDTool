@@ -1,5 +1,6 @@
 import { money } from '../lib/format'
 import { isMandatoryProduct, matchingCategory } from '../lib/match'
+import { PromoteButton } from './PromoteButton'
 
 const ACCENT = '#844292'
 
@@ -17,7 +18,18 @@ function groupByProduct(products) {
   return groups
 }
 
-export function RecommendationCard({ recommendation, index, mandatoryProducts, requiredCategories, onToggleCustomization, repricing }) {
+export function RecommendationCard({
+  customProducts = [],
+  index,
+  mandatoryProducts,
+  onPromote,
+  onToggleCustomization,
+  promotedNames,
+  promotingName,
+  recommendation,
+  repricing,
+  requiredCategories,
+}) {
   const groupedProducts = groupByProduct(recommendation.products)
   const customizeProducts = recommendation.customizeProducts || []
   const boxProductNames = recommendation.products.map(product => product.name)
@@ -40,6 +52,7 @@ export function RecommendationCard({ recommendation, index, mandatoryProducts, r
           const isMandatory = isMandatoryProduct(product.name, mandatoryProducts, boxProductNames)
           const matchedCategory = matchingCategory(product, requiredCategories)
           const isCustomized = customizeProducts.includes(product.name)
+          const customEntry = customProducts.find(entry => entry.name === product.name)
           return (
             <div key={product.name} className="border-b border-[#ece0ec] py-1.5 last:border-0">
               <div className="flex items-center justify-between gap-3">
@@ -48,6 +61,13 @@ export function RecommendationCard({ recommendation, index, mandatoryProducts, r
                   {count > 1 && <span className="badge badge-repeat">×{count}</span>}
                   {isMandatory && <span className="badge badge-mandatory">Mandatory</span>}
                   {matchedCategory && <span className="badge badge-category">Required: {matchedCategory}</span>}
+                  {customEntry && onPromote && (
+                    <PromoteButton
+                      promoted={promotedNames?.has(product.name) ?? false}
+                      promoting={promotingName === product.name}
+                      onClick={() => onPromote(customEntry)}
+                    />
+                  )}
                 </span>
                 <span className="whitespace-nowrap text-[11px] text-[#8a7690]">{product.vendor}</span>
               </div>

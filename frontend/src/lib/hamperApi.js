@@ -18,6 +18,23 @@ export async function fetchHamperCatalogPreview() {
   return response.json()
 }
 
+export async function promoteHamperItem(item) {
+  const response = await fetch(`${API}/api/hampers/catalog/promote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  })
+  if (!response.ok) {
+    let detail = null
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {}
+    throw new Error(detail || `Could not add to the catalog (${response.status})`)
+  }
+  return response.json()
+}
+
 export async function uploadHamperCatalog(file) {
   const response = await fetch(`${API}/api/hampers/catalog/upload`, {
     method: 'POST',

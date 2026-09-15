@@ -1,6 +1,6 @@
 import { HamperCard } from './HamperCard'
 
-export function HamperResultsPanel({ loading, message, result }) {
+export function HamperResultsPanel({ customItems, loading, message, onPromote, promotedNames, promotingName, result }) {
   const recommendations = result?.recommendations ?? []
 
   return (
@@ -39,7 +39,15 @@ export function HamperResultsPanel({ loading, message, result }) {
       ) : (
         <div className={`grid gap-3 xl:grid-cols-2 ${loading ? 'results-stale' : ''}`}>
           {recommendations.map((recommendation, index) => (
-            <HamperCard key={index} recommendation={recommendation} index={index} />
+            <HamperCard
+              key={index}
+              customItems={customItems}
+              recommendation={recommendation}
+              index={index}
+              onPromote={onPromote}
+              promotedNames={promotedNames}
+              promotingName={promotingName}
+            />
           ))}
         </div>
       )}

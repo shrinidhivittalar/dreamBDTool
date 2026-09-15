@@ -31,6 +31,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .badge-mandatory { background: #fbedf1; color: #b32758; }
 .badge-category { background: #e8f3ec; color: #4c8664; }
 .badge-repeat { background: #fdf1de; color: #a5690a; }
+.badge-promoted { background: #e8f3ec; color: #4c8664; }
+.promote-btn { border: 1px solid #dacfc6; background: #fffdfa; color: #a5690a; border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .18s; }
+.promote-btn:hover:not(:disabled) { border-color: #a5690a; background: #fdf1de; }
+.promote-btn:disabled { opacity: .6; cursor: default; }
+.brand-dad .promote-btn { color: var(--dad-accent-strong); }
+.brand-dad .promote-btn:hover:not(:disabled) { border-color: var(--dad-accent); background: var(--dad-accent-soft); }
+.brand-dad .badge-promoted { background: var(--dad-accent-soft); color: var(--dad-accent-strong); }
 @media (max-width: 640px) {
   .serif { letter-spacing: -0.015em; }
   .card { border-radius: 10px; }

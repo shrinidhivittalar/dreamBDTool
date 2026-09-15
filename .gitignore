@@ -22,3 +22,9 @@ SESSION_NOTES_*.md
 # that gets rewritten on every manual upload/restart, same reasoning as the
 # usage counters above; giftbox_data/ already holds the checked-in source.
 .cache/hamper_catalog.*
+
+# Promoted custom items (backend/promoted_products.py,
+# backend/hampers/promoted_items.py) - runtime state written by BD users
+# clicking "Make permanent" on the live site, not source data to check in.
+.cache/promoted_products.json
+.cache/promoted_hamper_items.json

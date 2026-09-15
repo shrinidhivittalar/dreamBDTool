@@ -76,6 +76,23 @@ export async function exportRecommendations(payload, format, layout = 'summary')
   return response.blob()
 }
 
+export async function promoteProduct(item) {
+  const response = await fetch(`${API}/api/products/promote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  })
+  if (!response.ok) {
+    let detail = null
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {}
+    throw new Error(detail || `Could not add to the catalog (${response.status})`)
+  }
+  return response.json()
+}
+
 export async function fetchProductStatus() {
   const response = await fetch(`${API}/api/products/status`)
   if (!response.ok) throw new Error(`Request failed (${response.status})`)

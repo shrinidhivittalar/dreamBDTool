@@ -12,6 +12,7 @@ try:
     from .exporter import content_type_for, export_recommendations, filename_for
     from .intent_parser import parse_intent_response
     from .models import (
+        CustomProduct,
         IntentParseRequest,
         IntentParseResponse,
         Product,
@@ -21,6 +22,7 @@ try:
         RepriceResponse,
     )
     from .pricing import pricing_engine
+    from .promoted_products import add_promoted_product, get_promoted_products, is_name_taken
     from .recommender import recommend
     from .recommender_config import MAX_ITEM_COUNT
     from .recommender_constraints import find_customization_addon
@@ -33,6 +35,7 @@ except ImportError:
     from exporter import content_type_for, export_recommendations, filename_for
     from intent_parser import parse_intent_response
     from models import (
+        CustomProduct,
         IntentParseRequest,
         IntentParseResponse,
         Product,
@@ -42,12 +45,21 @@ except ImportError:
         RepriceResponse,
     )
     from pricing import pricing_engine
+    from promoted_products import add_promoted_product, get_promoted_products, is_name_taken
     from recommender import recommend
     from recommender_config import MAX_ITEM_COUNT
     from recommender_constraints import find_customization_addon
     from recommender_rules import _fuzzy_matches, _matches, _normalized_text
     from stats import get_stats, record_snack_box_recommendation, record_visit
     from validator import blocking_errors, validate_recommendations
+
+
+def _all_products() -> list[Product]:
+    # Real catalog plus anything a BD user has promoted from a one-off
+    # custom item into the permanent catalog (see promoted_products.py) -
+    # every read path that searches/lists/previews the catalog should see
+    # both, not just the base catalog.
+    return [*data_provider.get_products(), *get_promoted_products()]
 
 
 def _auto_refresh_enabled() -> bool:
@@ -274,7 +286,7 @@ def read_stats(x_stats_key: str | None = Header(default=None)) -> dict[str, int]
 
 @app.get("/api/products", response_model=list[Product])
 def list_products() -> list[Product]:
-    return data_provider.get_products()
+    return _all_products()
 
 
 @app.get("/api/products/preview")
@@ -284,8 +296,26 @@ def preview_products() -> list[dict[str, object]]:
     also carries vendor/sourcing/rock_bottom_price etc.)."""
     return [
         {"name": product.name, "dad_selling_price": product.selling_price}
-        for product in data_provider.get_products()
+        for product in _all_products()
     ]
+
+
+@app.post("/api/products/promote")
+def promote_custom_product(item: CustomProduct) -> dict[str, object]:
+    """Promotes a one-off custom item (built for a single brief, see
+    RecommendationRequest.custom_products) into the permanent catalog, for
+    every BD user on this deployed backend, from now on - not just this
+    request. See promoted_products.py for exactly what this does and does
+    not guarantee (survives a restart, not a redeploy without a persistent
+    disk)."""
+    catalog_products = data_provider.get_products()
+    if is_name_taken(item.name, catalog_products):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{item.name}' is already in the catalog - nothing to promote.",
+        )
+    add_promoted_product(item)
+    return {"name": item.name, "catalog_size": len(_all_products())}
 
 
 @app.get("/api/products/status")
@@ -337,7 +367,7 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
         default_item_count=request.default_item_count,
         default_budget_min=request.default_budget_min,
     )
-    products = data_provider.get_products()
+    products = _all_products()
     messages: list[str] = []
     try:
         recommendations = recommend(products, parsed.recommendation_request, limit=parsed.recommendation_request.option_count, messages=messages)
@@ -352,40 +382,49 @@ def recommendations_from_intent(request: IntentParseRequest) -> RecommendationRe
     return _validated_response(recommendations, parsed.recommendation_request, products, message)
 
 
+def _apply_custom_products(request: RecommendationRequest, products: list[Product]) -> tuple[RecommendationRequest, list[Product]]:
+    """Injects request.custom_products into the search pool via the same
+    Must-Include forcing pipeline real mandatory products already use (see
+    the 2026-09-15/16 session notes) - shared by every endpoint that runs
+    recommend() from a raw RecommendationRequest, so a request carrying
+    custom_products behaves identically whether it's generating fresh
+    recommendations or re-generating the same brief for an export."""
+    if not request.custom_products:
+        return request, products
+    # Custom items are added "on top" of the chosen item count, not eaten
+    # out of it - bump item_count so the real catalog picks stay at their
+    # requested size. None (any-size search) needs no adjustment - it
+    # already sweeps every size and forced items reduce each trial size's
+    # optional slots the same way Must Include does.
+    if request.item_count is not None:
+        total_slots = request.item_count + len(request.custom_products)
+        if total_slots > MAX_ITEM_COUNT:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{request.item_count} item(s) plus {len(request.custom_products)} custom "
+                    f"item(s) is {total_slots}, above the {MAX_ITEM_COUNT}-item maximum. "
+                    "Lower the item count or remove a custom item."
+                ),
+            )
+    else:
+        total_slots = None
+    synthetic = [
+        Product(name=custom.name, selling_price=custom.price, category=custom.category)
+        for custom in request.custom_products
+    ]
+    engine_request = request.model_copy(update={
+        "mandatory_products": [*request.mandatory_products, *(custom.name for custom in request.custom_products)],
+        "item_count": total_slots,
+    })
+    return engine_request, [*products, *synthetic]
+
+
 @app.post("/api/recommendations", response_model=RecommendationResponse)
 def create_recommendations(request: RecommendationRequest) -> RecommendationResponse:
     record_snack_box_recommendation()
-    products = data_provider.get_products()
-    engine_request = request
-    pool = products
-    if request.custom_products:
-        # Custom items are added "on top" of the chosen item count, not
-        # eaten out of it - bump item_count so the real catalog picks stay
-        # at their requested size. None (any-size search) needs no
-        # adjustment - it already sweeps every size and forced items reduce
-        # each trial size's optional slots the same way Must Include does.
-        if request.item_count is not None:
-            total_slots = request.item_count + len(request.custom_products)
-            if total_slots > MAX_ITEM_COUNT:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"{request.item_count} item(s) plus {len(request.custom_products)} custom "
-                        f"item(s) is {total_slots}, above the {MAX_ITEM_COUNT}-item maximum. "
-                        "Lower the item count or remove a custom item."
-                    ),
-                )
-        else:
-            total_slots = None
-        synthetic = [
-            Product(name=custom.name, selling_price=custom.price, category=custom.category)
-            for custom in request.custom_products
-        ]
-        engine_request = request.model_copy(update={
-            "mandatory_products": [*request.mandatory_products, *(custom.name for custom in request.custom_products)],
-            "item_count": total_slots,
-        })
-        pool = [*products, *synthetic]
+    products = _all_products()
+    engine_request, pool = _apply_custom_products(request, products)
     messages: list[str] = []
     try:
         recommendations = recommend(pool, engine_request, limit=engine_request.option_count, messages=messages)
@@ -438,10 +477,11 @@ def export_recommendation_file(export_format: str, request: RecommendationReques
     if layout not in {"summary", "itemized"}:
         raise HTTPException(status_code=400, detail="Export layout must be summary or itemized")
 
-    products = data_provider.get_products()
+    products = _all_products()
+    engine_request, pool = _apply_custom_products(request, products)
     try:
-        recommendations = recommend(products, request, limit=request.option_count)
-        issues = validate_recommendations(recommendations, request)
+        recommendations = recommend(pool, engine_request, limit=engine_request.option_count)
+        issues = validate_recommendations(recommendations, engine_request)
         errors = blocking_errors(issues)
         if errors:
             raise RuntimeError(f"Recommendation validation failed: {errors[0].message}")

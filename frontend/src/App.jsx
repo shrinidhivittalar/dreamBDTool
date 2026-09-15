@@ -3,7 +3,7 @@ import { BriefWizard } from './components/BriefWizard'
 import { CatalogPreviewDialog } from './components/CatalogPreviewDialog'
 import { ResultsPanel } from './components/ResultsPanel'
 import { categories, initialForm } from './config/brief'
-import { exportRecommendations, fetchProducts, fetchProductsPreview, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
+import { exportRecommendations, fetchProducts, fetchProductsPreview, fetchRecommendations, promoteProduct, repriceRecommendation, uploadProducts } from './lib/api'
 import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
 export function App({ hideBrand }) {
@@ -23,6 +23,9 @@ export function App({ hideBrand }) {
   const [refreshing, setRefreshing] = useState(false)
   const [repricingIndices, setRepricingIndices] = useState(() => new Set())
   const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false)
+  const [pendingPromote, setPendingPromote] = useState(null)
+  const [promoting, setPromoting] = useState(false)
+  const [promotedNames, setPromotedNames] = useState(() => new Set())
 
   useEffect(() => {
     fetchProducts()
@@ -84,6 +87,7 @@ export function App({ hideBrand }) {
       setLastBrief({
         mandatoryProducts: payload.mandatory_products,
         requiredCategories: payload.required_categories,
+        customProducts: payload.custom_products,
       })
       setLastPayload(payload)
     } catch (error) {
@@ -176,6 +180,36 @@ export function App({ hideBrand }) {
     }
   }
 
+  function requestPromote(entry) {
+    setPendingPromote(entry)
+  }
+
+  function cancelPromote() {
+    setPendingPromote(null)
+  }
+
+  async function confirmPromote() {
+    if (!pendingPromote) return
+    setPromoting(true)
+    try {
+      await promoteProduct(pendingPromote)
+      setPromotedNames(current => new Set(current).add(pendingPromote.name))
+    } catch (error) {
+      // Already-promoted (e.g. by someone else, or a page-reload losing
+      // this session's local promoted-set) isn't a real failure from the
+      // user's point of view - the item IS in the catalog, which is what
+      // they wanted. Only a genuine failure should read as an error.
+      if (String(error.message).toLowerCase().includes('already in the catalog')) {
+        setPromotedNames(current => new Set(current).add(pendingPromote.name))
+      } else {
+        setMessage(error.message)
+      }
+    } finally {
+      setPromoting(false)
+      setPendingPromote(null)
+    }
+  }
+
   async function uploadCatalog(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -265,8 +299,11 @@ export function App({ hideBrand }) {
             message={message}
             recommendations={recommendations}
             onExport={exportCurrent}
+            onPromote={requestPromote}
             exporting={exporting}
             onToggleCustomization={toggleCustomization}
+            promotedNames={promotedNames}
+            promotingName={promoting ? pendingPromote?.name : null}
             repricingIndices={repricingIndices}
           />
         </div>
@@ -291,6 +328,24 @@ export function App({ hideBrand }) {
             <div className="modal-actions">
               <button type="button" className="pill" onClick={cancelPendingConflicts}>Cancel, let me edit</button>
               <button type="button" className="wizard-next" onClick={confirmPendingConflicts}>Include anyway <span>&rarr;</span></button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingPromote && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <p className="modal-title">Add "{pendingPromote.name}" to the catalog?</p>
+            <p className="modal-body">
+              <span className="modal-conflict-line">This makes it a real catalog item - available to everyone using this tool, in every future brief, not just this one.</span>
+              <span className="modal-conflict-line">It stays in the catalog until the next time this app is updated and redeployed - after that, you may need to add it again.</span>
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="pill" onClick={cancelPromote} disabled={promoting}>Cancel</button>
+              <button type="button" className="wizard-next" onClick={confirmPromote} disabled={promoting}>
+                {promoting ? 'Adding...' : 'Add to catalog'} <span>&rarr;</span>
+              </button>
             </div>
           </div>
         </div>

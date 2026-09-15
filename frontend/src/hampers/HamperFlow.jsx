@@ -3,7 +3,7 @@ import { CatalogPreviewDialog } from '../components/CatalogPreviewDialog'
 import { HamperWizard } from './HamperWizard'
 import { HamperResultsPanel } from './HamperResultsPanel'
 import { initialHamperForm, hamperCategories } from '../config/hamper'
-import { fetchHamperCatalogPreview, fetchHamperCatalogStatus, fetchHamperProducts, fetchHamperRecommendations, uploadHamperCatalog } from '../lib/hamperApi'
+import { fetchHamperCatalogPreview, fetchHamperCatalogStatus, fetchHamperProducts, fetchHamperRecommendations, promoteHamperItem, uploadHamperCatalog } from '../lib/hamperApi'
 
 export function HamperFlow() {
   const [form, setForm] = useState(initialHamperForm)
@@ -14,6 +14,10 @@ export function HamperFlow() {
   const [productNames, setProductNames] = useState([])
   const [uploading, setUploading] = useState(false)
   const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false)
+  const [lastCustomItems, setLastCustomItems] = useState([])
+  const [pendingPromote, setPendingPromote] = useState(null)
+  const [promoting, setPromoting] = useState(false)
+  const [promotedNames, setPromotedNames] = useState(() => new Set())
 
   function refreshCatalogInfo() {
     fetchHamperCatalogStatus().then(setCatalogStatus).catch(() => {})
@@ -75,11 +79,38 @@ export function HamperFlow() {
       const data = await fetchHamperRecommendations(payload)
       setResult(data)
       setMessage(data.message || '')
+      setLastCustomItems(payload.custom_items)
     } catch (error) {
       setMessage(error.message)
       setResult(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  function requestPromote(entry) {
+    setPendingPromote(entry)
+  }
+
+  function cancelPromote() {
+    setPendingPromote(null)
+  }
+
+  async function confirmPromote() {
+    if (!pendingPromote) return
+    setPromoting(true)
+    try {
+      await promoteHamperItem(pendingPromote)
+      setPromotedNames(current => new Set(current).add(pendingPromote.name))
+    } catch (error) {
+      if (String(error.message).toLowerCase().includes('already in the catalog')) {
+        setPromotedNames(current => new Set(current).add(pendingPromote.name))
+      } else {
+        setMessage(error.message)
+      }
+    } finally {
+      setPromoting(false)
+      setPendingPromote(null)
     }
   }
 
@@ -100,7 +131,15 @@ export function HamperFlow() {
         toggleCategory={toggleCategory}
         uploading={uploading}
       />
-      <HamperResultsPanel loading={loading} message={message} result={result} />
+      <HamperResultsPanel
+        customItems={lastCustomItems}
+        loading={loading}
+        message={message}
+        onPromote={requestPromote}
+        promotedNames={promotedNames}
+        promotingName={promoting ? pendingPromote?.name : null}
+        result={result}
+      />
 
       <CatalogPreviewDialog
         open={catalogPreviewOpen}
@@ -108,6 +147,24 @@ export function HamperFlow() {
         title="Hamper catalog"
         fetcher={fetchHamperCatalogPreview}
       />
+
+      {pendingPromote && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <p className="modal-title">Add "{pendingPromote.name}" to the catalog?</p>
+            <p className="modal-body">
+              <span className="modal-conflict-line">This makes it a real catalog item - available to everyone using this tool, in every future brief, not just this one.</span>
+              <span className="modal-conflict-line">It stays in the catalog until the next time this app is updated and redeployed - after that, you may need to add it again.</span>
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="pill" onClick={cancelPromote} disabled={promoting}>Cancel</button>
+              <button type="button" className="wizard-next" onClick={confirmPromote} disabled={promoting}>
+                {promoting ? 'Adding...' : 'Add to catalog'} <span>&rarr;</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

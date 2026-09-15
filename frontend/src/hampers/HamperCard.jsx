@@ -1,4 +1,5 @@
 import { money } from '../lib/format'
+import { PromoteButton } from '../components/PromoteButton'
 
 function ProgressRow({ label, pct, note }) {
   const clamped = pct == null ? 0 : Math.max(0, Math.min(100, pct))
@@ -70,7 +71,7 @@ function FitStatus({ fitStatus }) {
   )
 }
 
-export function HamperCard({ recommendation, index }) {
+export function HamperCard({ customItems = [], index, onPromote, promotedNames, promotingName, recommendation }) {
   const { container, items, total_price, budget_utilisation, composition, fit_status } = recommendation
   const fillPct = fit_status.utilisation_ratio != null ? Math.round(fit_status.utilisation_ratio * 100) : null
 
@@ -84,17 +85,27 @@ export function HamperCard({ recommendation, index }) {
       </div>
 
       <div className="px-4 pt-2">
-        {items.map(item => (
-          <div key={item.name} className="flex items-center justify-between gap-1.5 py-0.5 text-[13px]" style={{ color: 'var(--dad-ink-soft, #4b423d)' }}>
-            <span className="flex items-center gap-1.5">
-              <span aria-hidden="true">·</span>
-              <span>{item.name}</span>
-            </span>
-            {item.price != null && (
-              <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>{money(item.price)}</span>
-            )}
-          </div>
-        ))}
+        {items.map(item => {
+          const customEntry = customItems.find(entry => entry.name === item.name)
+          return (
+            <div key={item.name} className="flex items-center justify-between gap-1.5 py-0.5 text-[13px]" style={{ color: 'var(--dad-ink-soft, #4b423d)' }}>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span aria-hidden="true">·</span>
+                <span>{item.name}</span>
+                {customEntry && onPromote && (
+                  <PromoteButton
+                    promoted={promotedNames?.has(item.name) ?? false}
+                    promoting={promotingName === item.name}
+                    onClick={() => onPromote(customEntry)}
+                  />
+                )}
+              </span>
+              {item.price != null && (
+                <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--dad-ink-soft, #9b8d84)' }}>{money(item.price)}</span>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div className="mt-3 px-4 pb-3.5">

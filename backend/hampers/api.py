@@ -16,11 +16,13 @@ from fastapi import APIRouter, HTTPException, Request
 
 try:
     from .catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
-    from .models import HamperItem, HamperRequest, HamperSearchResult
+    from .models import HamperCustomItem, HamperItem, HamperRequest, HamperSearchResult
+    from .promoted_items import add_promoted_item, get_promoted_items, is_name_taken
     from .recommender import MAX_ITEMS_PER_HAMPER, recommend_hampers
 except ImportError:
     from catalog_loader import HamperCatalogLoadResult, load_hamper_catalog, load_hamper_catalog_bytes
-    from models import HamperItem, HamperRequest, HamperSearchResult
+    from models import HamperCustomItem, HamperItem, HamperRequest, HamperSearchResult
+    from promoted_items import add_promoted_item, get_promoted_items, is_name_taken
     from recommender import MAX_ITEMS_PER_HAMPER, recommend_hampers
 
 # Isolated from the try/except above on purpose: ..stats reaches outside
@@ -91,13 +93,19 @@ def hamper_catalog_status() -> dict[str, object]:
     }
 
 
+def _all_hamper_items(catalog: HamperCatalogLoadResult) -> list[HamperItem]:
+    # Real catalog items plus anything a BD user has promoted from a one-off
+    # custom item into the permanent catalog (see promoted_items.py).
+    return [*catalog.items, *get_promoted_items()]
+
+
 @router.get("/products", response_model=list[str])
 def list_hamper_products() -> list[str]:
     """Item names only, for the mandatory/excluded product autocomplete -
     mirrors the snack-box GET /api/products used the same way, just without
     the full Product payload since the dropdown only needs names."""
     catalog = _get_catalog()
-    return sorted(item.name for item in catalog.items)
+    return sorted(item.name for item in _all_hamper_items(catalog))
 
 
 @router.get("/catalog/preview")
@@ -109,13 +117,29 @@ def preview_hamper_catalog() -> dict[str, list[dict[str, object]]]:
     return {
         "items": [
             {"name": item.name, "dad_selling_price": item.price}
-            for item in sorted(catalog.items, key=lambda i: i.name)
+            for item in sorted(_all_hamper_items(catalog), key=lambda i: i.name)
         ],
         "containers": [
             {"name": container.name, "dad_selling_price": container.price}
             for container in sorted(catalog.containers, key=lambda c: c.name)
         ],
     }
+
+
+@router.post("/catalog/promote")
+def promote_custom_hamper_item(item: HamperCustomItem) -> dict[str, object]:
+    """Promotes a one-off custom hamper item (built for a single brief, see
+    HamperRequest.custom_items) into the permanent catalog, for every BD
+    user on this deployed backend, from now on - not just this request. See
+    promoted_items.py for exactly what this does and does not guarantee."""
+    catalog = _get_catalog()
+    if is_name_taken(item.name, catalog.items):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{item.name}' is already in the catalog - nothing to promote.",
+        )
+    add_promoted_item(item)
+    return {"name": item.name, "item_count": len(_all_hamper_items(catalog))}
 
 
 @router.post("/catalog/upload")
@@ -158,7 +182,7 @@ def create_hamper_recommendations(request: HamperRequest) -> HamperSearchResult:
     record_hamper_recommendation()
     catalog = _get_catalog()
     engine_request = request
-    items = catalog.items
+    items = _all_hamper_items(catalog)
     if request.custom_items:
         # Same "on top" rule as the snack-box side: custom items must not
         # eat into the requested items-per-box count. None (unconstrained)
@@ -192,5 +216,5 @@ def create_hamper_recommendations(request: HamperRequest) -> HamperSearchResult:
             "mandatory_products": [*request.mandatory_products, *(custom.name for custom in request.custom_items)],
             "items_per_box": total_slots,
         })
-        items = [*catalog.items, *synthetic]
+        items = [*items, *synthetic]
     return recommend_hampers(catalog.containers, items, engine_request, catalog.eligible_container_names)
