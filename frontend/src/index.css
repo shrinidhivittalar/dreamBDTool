@@ -64,6 +64,21 @@ button:focus-visible, input:focus-visible { outline: 3px solid #bd285c33; outlin
 .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
 .modal-actions .pill { flex: 1; text-align: center; cursor: pointer; }
 .modal-actions .wizard-next { flex: 1; margin-top: 0; }
+.catalog-preview-card { background: #fffdfa; border-radius: 14px; width: min(760px, 100%); max-height: min(80vh, 640px); display: flex; flex-direction: column; padding: 20px 22px; box-shadow: 0 20px 50px #302a2740; overflow: hidden; }
+.catalog-preview-card.fullscreen { width: 100%; height: 100%; max-height: 100%; border-radius: 0; }
+.catalog-preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.catalog-preview-title { margin-top: 2px; font-size: 18px; }
+.catalog-preview-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.catalog-preview-search { margin-bottom: 10px; }
+.catalog-preview-body { overflow-y: auto; flex: 1; }
+.catalog-preview-section + .catalog-preview-section { margin-top: 18px; }
+.catalog-preview-section-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #6b5570; margin-bottom: 6px; }
+.catalog-preview-table { width: 100%; border-collapse: collapse; }
+.catalog-preview-table th, .catalog-preview-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #efe6e1; font-size: 13px; }
+.catalog-preview-table th { color: #6b5570; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.catalog-preview-count { margin-top: 10px; font-size: 12px; color: #6b5570; text-align: right; }
+.brand-dad .catalog-preview-title { color: var(--dad-accent-strong); }
+.brand-dad .catalog-preview-table th { color: var(--dad-accent-strong); }
 .option-slider::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
 .option-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #bd285c; border: 2px solid #fffdfa; box-shadow: 0 1px 4px #49312635; cursor: pointer; }
 .segmented-control { display: flex; gap: 4px; padding: 4px; border: 1px solid #e4dcd4; border-radius: 10px; background: #f9f4ed; }

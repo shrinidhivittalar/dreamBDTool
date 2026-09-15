@@ -12,6 +12,12 @@ export async function fetchHamperProducts() {
   return response.json()
 }
 
+export async function fetchHamperCatalogPreview() {
+  const response = await fetch(`${API}/api/hampers/catalog/preview`)
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  return response.json()
+}
+
 export async function uploadHamperCatalog(file) {
   const response = await fetch(`${API}/api/hampers/catalog/upload`, {
     method: 'POST',

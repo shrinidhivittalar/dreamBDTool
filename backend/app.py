@@ -275,6 +275,17 @@ def list_products() -> list[Product]:
     return data_provider.get_products()
 
 
+@app.get("/api/products/preview")
+def preview_products() -> list[dict[str, object]]:
+    """Lean name+price listing for the BD-facing 'view catalog' popup - only
+    the two fields BD is meant to see, not the full Product payload (which
+    also carries vendor/sourcing/rock_bottom_price etc.)."""
+    return [
+        {"name": product.name, "dad_selling_price": product.selling_price}
+        for product in data_provider.get_products()
+    ]
+
+
 @app.get("/api/products/status")
 def product_data_status() -> dict[str, object]:
     return data_provider.get_status().as_dict()

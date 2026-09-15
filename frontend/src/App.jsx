@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { BriefWizard } from './components/BriefWizard'
+import { CatalogPreviewDialog } from './components/CatalogPreviewDialog'
 import { ResultsPanel } from './components/ResultsPanel'
 import { categories, initialForm } from './config/brief'
-import { exportRecommendations, fetchProducts, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
+import { exportRecommendations, fetchProducts, fetchProductsPreview, fetchRecommendations, repriceRecommendation, uploadProducts } from './lib/api'
 import { findMandatoryCategoryConflicts, findMandatoryExcludedConflicts, recommendationPayload, tagsFor } from './lib/briefForm'
 
 export function App({ hideBrand }) {
@@ -21,6 +22,7 @@ export function App({ hideBrand }) {
   const [exporting, setExporting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [repricingIndices, setRepricingIndices] = useState(() => new Set())
+  const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false)
 
   useEffect(() => {
     fetchProducts()
@@ -210,6 +212,7 @@ export function App({ hideBrand }) {
             <span className="hidden sm:inline">Internal use only</span>
             <span className="h-2 w-2 rounded-full bg-[#5d9c78]" />
             <span>Catalog ready</span>
+            <button type="button" className="pill" onClick={() => setCatalogPreviewOpen(true)}>View catalog</button>
             <label className="pill" style={{ cursor: 'pointer' }}>
               Upload catalog
               <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={uploadCatalog} disabled={refreshing} />
@@ -288,6 +291,13 @@ export function App({ hideBrand }) {
           </div>
         </div>
       )}
+
+      <CatalogPreviewDialog
+        open={catalogPreviewOpen}
+        onClose={() => setCatalogPreviewOpen(false)}
+        title="Snack box catalog"
+        fetcher={fetchProductsPreview}
+      />
     </div>
   )
 }

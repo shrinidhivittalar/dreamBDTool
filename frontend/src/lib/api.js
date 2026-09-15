@@ -9,6 +9,12 @@ export async function fetchProducts() {
   return response.json()
 }
 
+export async function fetchProductsPreview() {
+  const response = await fetch(`${API}/api/products/preview`)
+  if (!response.ok) throw new Error(`Request failed (${response.status})`)
+  return response.json()
+}
+
 export async function fetchRecommendations(payload) {
   let response
   try {

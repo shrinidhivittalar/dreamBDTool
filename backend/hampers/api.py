@@ -100,6 +100,24 @@ def list_hamper_products() -> list[str]:
     return sorted(item.name for item in catalog.items)
 
 
+@router.get("/catalog/preview")
+def preview_hamper_catalog() -> dict[str, list[dict[str, object]]]:
+    """Lean name+price listing for the BD-facing 'view catalog' popup -
+    covers both inside items and the containers/boxes themselves, since both
+    are 'what exists in the company' from a BD point of view."""
+    catalog = _get_catalog()
+    return {
+        "items": [
+            {"name": item.name, "dad_selling_price": item.price}
+            for item in sorted(catalog.items, key=lambda i: i.name)
+        ],
+        "containers": [
+            {"name": container.name, "dad_selling_price": container.price}
+            for container in sorted(catalog.containers, key=lambda c: c.name)
+        ],
+    }
+
+
 @router.post("/catalog/upload")
 async def upload_hamper_catalog(request: Request) -> dict[str, object]:
     global _catalog

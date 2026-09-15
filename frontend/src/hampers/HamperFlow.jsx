@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import { CatalogPreviewDialog } from '../components/CatalogPreviewDialog'
 import { HamperWizard } from './HamperWizard'
 import { HamperResultsPanel } from './HamperResultsPanel'
 import { initialHamperForm, hamperCategories } from '../config/hamper'
-import { fetchHamperCatalogStatus, fetchHamperProducts, fetchHamperRecommendations, uploadHamperCatalog } from '../lib/hamperApi'
+import { fetchHamperCatalogPreview, fetchHamperCatalogStatus, fetchHamperProducts, fetchHamperRecommendations, uploadHamperCatalog } from '../lib/hamperApi'
 
 export function HamperFlow() {
   const [form, setForm] = useState(initialHamperForm)
@@ -12,6 +13,7 @@ export function HamperFlow() {
   const [catalogStatus, setCatalogStatus] = useState(null)
   const [productNames, setProductNames] = useState([])
   const [uploading, setUploading] = useState(false)
+  const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false)
 
   function refreshCatalogInfo() {
     fetchHamperCatalogStatus().then(setCatalogStatus).catch(() => {})
@@ -88,11 +90,19 @@ export function HamperFlow() {
         onGenerate={generate}
         onSet={set}
         onUploadCatalog={uploadCatalog}
+        onViewCatalog={() => setCatalogPreviewOpen(true)}
         productNames={productNames}
         toggleCategory={toggleCategory}
         uploading={uploading}
       />
       <HamperResultsPanel loading={loading} message={message} result={result} />
+
+      <CatalogPreviewDialog
+        open={catalogPreviewOpen}
+        onClose={() => setCatalogPreviewOpen(false)}
+        title="Hamper catalog"
+        fetcher={fetchHamperCatalogPreview}
+      />
     </div>
   )
 }
