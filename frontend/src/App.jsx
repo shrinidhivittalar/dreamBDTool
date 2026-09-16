@@ -339,7 +339,7 @@ export function App({ hideBrand }) {
             <p className="modal-title">Add "{pendingPromote.name}" to the catalog?</p>
             <p className="modal-body">
               <span className="modal-conflict-line">This makes it a real catalog item - available to everyone using this tool, in every future brief, not just this one.</span>
-              <span className="modal-conflict-line">It stays in the catalog until the next time this app is updated and redeployed - after that, you may need to add it again.</span>
+              <span className="modal-conflict-line">It stays in the catalog permanently, including through future app updates.</span>
             </p>
             <div className="modal-actions">
               <button type="button" className="pill" onClick={cancelPromote} disabled={promoting}>Cancel</button>
