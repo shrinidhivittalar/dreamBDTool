@@ -16,8 +16,7 @@ export function CustomItemField({ items, categories, showDimensions = false, onA
   const [length, setLength] = useState('')
   const [breadth, setBreadth] = useState('')
   const [height, setHeight] = useState('')
-
-  const canAdd = name.trim().length > 0 && Number(price) > 0 && category.length > 0
+  const [error, setError] = useState('')
 
   function reset() {
     setName('')
@@ -26,10 +25,19 @@ export function CustomItemField({ items, categories, showDimensions = false, onA
     setLength('')
     setBreadth('')
     setHeight('')
+    setError('')
   }
 
   function handleAdd() {
-    if (!canAdd) return
+    const missing = []
+    if (name.trim().length === 0) missing.push('item name')
+    if (!(Number(price) > 0)) missing.push('price')
+    if (category.length === 0) missing.push('category')
+    if (missing.length > 0) {
+      setError(`Please add: ${missing.join(', ')}`)
+      return
+    }
+    setError('')
     onAdd({
       name: name.trim(),
       price: Number(price),
@@ -97,9 +105,10 @@ export function CustomItemField({ items, categories, showDimensions = false, onA
           {showDimensions && (
             <p className="field-note">Dimensions are in inches. Leave blank if you don't know them.</p>
           )}
+          {error && <p className="field-error">{error}</p>}
           <div className="custom-item-form-actions">
             <button type="button" className="pill" onClick={() => { setOpen(false); reset() }}>Cancel</button>
-            <button type="button" className="pill" onClick={handleAdd} disabled={!canAdd}>Add item</button>
+            <button type="button" className="pill" onClick={handleAdd}>Add item</button>
           </div>
         </div>
       )}

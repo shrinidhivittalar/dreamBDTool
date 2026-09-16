@@ -1,20 +1,17 @@
-"""Lightweight, file-backed store of custom items a BD user has promoted
-from a one-off "client-requested" product into the real catalog. Same
-no-database convention as stats.py and the product-catalog cache: an
-in-memory-on-read list flushed to a JSON file on every change, guarded by a
-lock for concurrent-request safety.
+"""Store of custom items a BD user has promoted from a one-off
+"client-requested" product into the real catalog.
+
+Backed by Postgres (Neon, free tier) when DATABASE_URL is set - this is what
+makes "Make permanent" survive a real redeploy, not just a server restart.
+Falls back to the original file-backed JSON store (same no-database
+convention as stats.py) when DATABASE_URL is absent, e.g. local dev.
 
 Deliberately kept separate from the main catalog cache (data_provider.py) -
 that cache is a raw byte-blob of an uploaded spreadsheet, re-serializing it
 just to append one row would need a new writer with real round-trip risk to
-the primary catalog. This file is merged into the product list at read time
+the primary catalog. This store is merged into the product list at read time
 instead (see app.py) - promoted items are always the base catalog plus
 whatever's in here.
-
-Same caveat as everything else with no persistent disk attached: survives a
-plain server restart, not an actual redeploy. Surfaced to the BD user
-directly in the "Make permanent" confirmation copy in the frontend, not
-just here.
 """
 
 import json
@@ -23,8 +20,10 @@ import threading
 from pathlib import Path
 
 try:
+    from . import db
     from .models import CustomProduct, Product
 except ImportError:
+    import db
     from models import CustomProduct, Product
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,7 +34,50 @@ PROMOTED_PRODUCTS_PATH = Path(
 _LOCK = threading.Lock()
 
 
-def _load() -> list[dict]:
+def _ensure_table(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS promoted_products (
+                name TEXT PRIMARY KEY,
+                price NUMERIC NOT NULL,
+                category TEXT NOT NULL
+            )
+            """
+        )
+    conn.commit()
+
+
+def _db_load() -> list[dict]:
+    conn = db.get_connection()
+    try:
+        _ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT name, price, category FROM promoted_products")
+            rows = cur.fetchall()
+        return [{"name": row[0], "price": float(row[1]), "category": row[2]} for row in rows]
+    finally:
+        conn.close()
+
+
+def _db_add(item: CustomProduct) -> None:
+    conn = db.get_connection()
+    try:
+        _ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO promoted_products (name, price, category) VALUES (%s, %s, %s)
+                ON CONFLICT (name) DO UPDATE SET price = EXCLUDED.price, category = EXCLUDED.category
+                """,
+                (item.name, item.price, item.category),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _file_load() -> list[dict]:
     if PROMOTED_PRODUCTS_PATH.exists():
         try:
             data = json.loads(PROMOTED_PRODUCTS_PATH.read_text())
@@ -46,26 +88,32 @@ def _load() -> list[dict]:
     return []
 
 
-def _save(data: list[dict]) -> None:
+def _file_add(item: CustomProduct) -> None:
+    data = _file_load()
+    data.append({"name": item.name, "price": item.price, "category": item.category})
     PROMOTED_PRODUCTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     PROMOTED_PRODUCTS_PATH.write_text(json.dumps(data))
 
 
-def get_promoted_products() -> list[Product]:
+def _load() -> list[dict]:
     with _LOCK:
-        return [Product(name=row["name"], selling_price=row["price"], category=row["category"]) for row in _load()]
+        return _db_load() if db.is_configured() else _file_load()
+
+
+def get_promoted_products() -> list[Product]:
+    return [Product(name=row["name"], selling_price=row["price"], category=row["category"]) for row in _load()]
 
 
 def is_name_taken(name: str, catalog_products: list[Product]) -> bool:
     normalized = name.strip().lower()
-    with _LOCK:
-        promoted_names = {row["name"].strip().lower() for row in _load()}
+    promoted_names = {row["name"].strip().lower() for row in _load()}
     catalog_names = {product.name.strip().lower() for product in catalog_products}
     return normalized in promoted_names or normalized in catalog_names
 
 
 def add_promoted_product(item: CustomProduct) -> None:
     with _LOCK:
-        data = _load()
-        data.append({"name": item.name, "price": item.price, "category": item.category})
-        _save(data)
+        if db.is_configured():
+            _db_add(item)
+        else:
+            _file_add(item)
